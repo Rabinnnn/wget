@@ -1,41 +1,108 @@
 package download
 
 import (
-    "fmt"
-    "io"
-    "time"
-    "wget/utils"
+	"fmt"
+	"io"
+	"strings"
+	"time"
 )
 
+// ProgressWriter is a custom writer that tracks the progress of the download
+// by updating download statistics like progress percentage, speed, and remaining time.
 type ProgressWriter struct {
-    writer      io.Writer
-    total       int64
-    downloaded  int64
-    lastPrinted time.Time
+	writer      io.Writer    
+	total       int64        
+	downloaded  int64        
+	lastPrinted time.Time    
+	startTime   time.Time   
 }
 
+// NewProgressWriter creates a new ProgressWriter instance that tracks download progress.
+// It initializes the writer and the total size of the file to be downloaded.
 func NewProgressWriter(writer io.Writer, total int64) *ProgressWriter {
-    return &ProgressWriter{writer: writer, total: total}
+	return &ProgressWriter{
+		writer:    writer,
+		total:     total,
+		startTime: time.Now(), 
+	}
 }
 
+// Write writes data to the underlying writer and tracks progress.
+// It updates the amount of data downloaded and calls the `printProgress` function to display the progress.
+// Write the data to the underlying writer (e.g., file or buffer).
 func (p *ProgressWriter) Write(data []byte) (int, error) {
-    n, err := p.writer.Write(data)
-    if err != nil {
-        return n, err
-    }
-    p.downloaded += int64(n)
-    p.printProgress()
-    return n, nil
+	
+	n, err := p.writer.Write(data)
+	if err != nil {
+		return n, err 
+	}
+
+	
+	p.downloaded += int64(n)
+
+	
+	p.printProgress()
+
+	return n, nil
 }
 
+// printProgress prints the progress of the download to the console.
+// It displays the downloaded data, total size, progress bar, download speed, and estimated remaining time.
 func (p *ProgressWriter) printProgress() {
-    if time.Since(p.lastPrinted) < time.Second {
-        return
-    }
-    p.lastPrinted = time.Now()
-    percent := float64(p.downloaded) / float64(p.total) * 100
-    fmt.Printf("\rDownloading... %.2f%% (%s/%s)", 
-        percent, 
-        utils.FormatBytes(p.downloaded), 
-        utils.FormatBytes(p.total))
+	// Limit the frequency of printing progress (only print every 500ms).
+	if time.Since(p.lastPrinted) < time.Second/2 {
+		return
+	}
+
+	
+	p.lastPrinted = time.Now()
+
+	
+	totalKiB := float64(p.total) / 1024
+	downloadedKiB := float64(p.downloaded) / 1024
+
+	
+	percent := float64(p.downloaded) / float64(p.total) * 100
+
+	// Calculate download speed in MiB/s by dividing the downloaded bytes by the elapsed time in seconds.
+	elapsed := time.Since(p.startTime).Seconds()
+	speed := float64(p.downloaded) / (1024 * 1024 * elapsed) // MiB/s
+
+	// Create a progress bar (50 characters wide) based on the percentage completed.
+	barWidth := 50
+	completed := int(float64(barWidth) * (float64(p.downloaded) / float64(p.total)))
+	bar := strings.Repeat("=", completed) + strings.Repeat(" ", barWidth-completed)
+
+	// Calculate the remaining time based on the current download speed and elapsed time.
+	var remainingTime string
+	if p.downloaded > 0 {
+		// Calculate bytes remaining and estimated time per byte.
+		bytesRemaining := p.total - p.downloaded
+		timePerByte := elapsed / float64(p.downloaded)
+		remainingSeconds := float64(bytesRemaining) * timePerByte
+
+		// Format the remaining time in seconds.
+		if remainingSeconds < 1 {
+			remainingTime = "0s"
+		} else {
+			remainingTime = fmt.Sprintf("%.1fs", remainingSeconds)
+		}
+	} else {
+		// If no data has been downloaded yet, remain uncertain about the remaining time.
+		remainingTime = "??s"
+	}
+
+	
+	fmt.Printf("\r %.2f KiB / %.2f KiB [%s] %.2f%% %.2f MiB/s %s",
+		downloadedKiB,
+		totalKiB,
+		bar,
+		percent,
+		speed,
+		remainingTime)
+
+
+	if p.downloaded == p.total {
+		fmt.Println()
+	}
 }
