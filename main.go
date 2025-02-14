@@ -60,3 +60,19 @@ func main() {
     if err != nil {
         fmt.Println("Error downloading file:", err)
     }
+// Helper function to read URLs from a file
+func readURLsFromFile(filename string) ([]string, error) {
+    file, err := os.Open(filename) // Open the file containing URLs
+    if err != nil {
+        return nil, err
+    }
+    defer file.Close()
+    
+    var urls []string
+    scanner := bufio.NewScanner(file) // Scanner to read the file line by line
+    for scanner.Scan() {
+        urls = append(urls, scanner.Text()) // Add each URL to the slice
+    }
+    return urls, scanner.Err()
+}
+}
