@@ -26,3 +26,13 @@ func main() {
         os.Stderr = logFile // Redirect stderr to log file
         fmt.Println("Output will be written to 'wget-log'.")
     }
+    // If input file is provided, read URLs and initiate downloading multiple files
+    if flags.InputFile != "" {
+        urls, err := readURLsFromFile(flags.InputFile) // Read URLs from the file
+        if err != nil {
+            fmt.Println("Error reading URLs from file:", err)
+            return
+        }
+        download.DownloadMultipleFiles(urls, flags.OutputDir, flags.RateLimit) // Download multiple files
+        return
+    }
