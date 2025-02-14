@@ -36,3 +36,16 @@ func main() {
         download.DownloadMultipleFiles(urls, flags.OutputDir, flags.RateLimit) // Download multiple files
         return
     }
+    // If mirror flag is set, mirror the website specified by the URL argument
+    if flags.Mirror {
+        if len(flag.Args()) == 0 {
+            fmt.Println("Error: URL is required for mirroring") // URL is required for mirroring
+            return
+        }
+        websiteURL := flag.Args()[0]
+        err := mirror.MirrorWebsite(websiteURL, flags.RateLimit) // Start mirroring the website
+        if err != nil {
+            fmt.Println("Error mirroring website:", err)
+        }
+        return
+    }
