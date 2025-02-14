@@ -49,3 +49,14 @@ func main() {
         }
         return
     }
+    // If no flags match, download a single file from the provided URL argument
+    if len(flag.Args()) == 0 {
+        fmt.Println("Error: URL is required") // URL is required for file download
+        return
+    }
+
+    fileURL := flag.Args()[0]
+    err := download.DownloadFile(fileURL, flags.OutputFile, flags.OutputDir, flags.RateLimit) // Download single file
+    if err != nil {
+        fmt.Println("Error downloading file:", err)
+    }
