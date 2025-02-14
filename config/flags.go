@@ -14,3 +14,7 @@ type Flags struct {
     Exclude      string 
     ConvertLinks bool   
 }
+
+// InitFlags initializes and parses command-line flags.
+func InitFlags() *Flags {
+    flags := &Flags{}
