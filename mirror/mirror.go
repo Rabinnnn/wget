@@ -16,3 +16,12 @@ func MirrorWebsite(websiteURL string, rateLimit string) error {
     if err != nil {
         return err
     }
+
+	err = download.DownloadFile(websiteURL, "index.html", domain, rateLimit)
+    if err != nil {
+        return err
+    }
+
+    // TODO: Implement recursive downloading of linked resources
+    return nil
+}
