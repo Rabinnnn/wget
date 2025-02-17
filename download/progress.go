@@ -64,14 +64,23 @@ func (p *ProgressWriter) printProgress() {
     totalKiB := float64(p.total) / 1024
     downloadedKiB := float64(p.downloaded) / 1024
 
-    percent := float64(p.downloaded) / float64(p.total) * 100
+    var percent float64
+    var barWidth int
+
+    // If the total size is unknown (Content-Length is -1), skip the percentage calculation.
+    if p.total > 0 {
+        percent = float64(p.downloaded) / float64(p.total) * 100
+        barWidth = 50
+    } else {
+        percent = -1 // Indicating no percentage calculation
+        barWidth = 25 // Decrease width since we don't know the total size
+    }
 
     // Calculate download speed in MiB/s by dividing the downloaded bytes by the elapsed time in seconds.
     elapsed := time.Since(p.startTime).Seconds()
     speed := float64(p.downloaded) / (1024 * 1024 * elapsed) // MiB/s
 
     // Create a progress bar (50 characters wide) based on the percentage completed.
-    barWidth := 50
     completed := int(float64(barWidth) * (float64(p.downloaded) / float64(p.total)))
     if completed < 0 {
         completed = 0 // Ensure the progress is non-negative
@@ -80,7 +89,7 @@ func (p *ProgressWriter) printProgress() {
 
     // Calculate the remaining time based on the current download speed and elapsed time.
     var remainingTime string
-    if p.downloaded > 0 {
+    if p.downloaded > 0 && p.total > 0 {
         bytesRemaining := p.total - p.downloaded
         timePerByte := elapsed / float64(p.downloaded)
         remainingSeconds := float64(bytesRemaining) * timePerByte
@@ -94,15 +103,24 @@ func (p *ProgressWriter) printProgress() {
         remainingTime = "??s"
     }
 
-    fmt.Printf("\r %.2f KiB / %.2f KiB [%s] %.2f%% %.2f MiB/s %s",
-        downloadedKiB,
-        totalKiB,
-        bar,
-        percent,
-        speed,
-        remainingTime)
+    // If the total size is unknown, display a message instead of showing percentage
+    if percent == -1 {
+        fmt.Printf("\r %.2f KiB [%s] Downloading... %.2f MiB/s %s",
+            downloadedKiB,
+            bar,
+            speed,
+            remainingTime)
+    } else {
+        fmt.Printf("\r %.2f KiB / %.2f KiB [%s] %.2f%% %.2f MiB/s %s",
+            downloadedKiB,
+            totalKiB,
+            bar,
+            percent,
+            speed,
+            remainingTime)
+    }
 
-    if p.downloaded == p.total {
+    if p.downloaded == p.total && p.total > 0 {
         fmt.Println()
     }
 }
