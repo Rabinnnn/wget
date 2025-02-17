@@ -1,5 +1,4 @@
 package main
-
 import (
     "flag"
     "fmt"
@@ -9,7 +8,6 @@ import (
     "wget/download"
     "wget/mirror"
 )
-
 func main() {
     // Initialize flags and parse command-line arguments
     flags := config.InitFlags()
@@ -54,12 +52,12 @@ func main() {
         fmt.Println("Error: URL is required") // URL is required for file download
         return
     }
-
     fileURL := flag.Args()[0]
     err := download.DownloadFile(fileURL, flags.OutputFile, flags.OutputDir, flags.RateLimit) // Download single file
     if err != nil {
         fmt.Println("Error downloading file:", err)
     }
+}
 // Helper function to read URLs from a file
 func readURLsFromFile(filename string) ([]string, error) {
     file, err := os.Open(filename) // Open the file containing URLs
@@ -75,4 +73,4 @@ func readURLsFromFile(filename string) ([]string, error) {
     }
     return urls, scanner.Err()
 }
-}
+
