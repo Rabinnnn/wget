@@ -49,60 +49,60 @@ func (p *ProgressWriter) Write(data []byte) (int, error) {
 // printProgress prints the progress of the download to the console.
 // It displays the downloaded data, total size, progress bar, download speed, and estimated remaining time.
 func (p *ProgressWriter) printProgress() {
-	// Limit the frequency of printing progress (only print every 500ms).
-	if time.Since(p.lastPrinted) < time.Second/2 {
-		return
-	}
+    // Limit the frequency of printing progress (only print every 500ms).
+    if time.Since(p.lastPrinted) < time.Second/2 {
+        return
+    }
 
-	
-	p.lastPrinted = time.Now()
+    p.lastPrinted = time.Now()
 
-	
-	totalKiB := float64(p.total) / 1024
-	downloadedKiB := float64(p.downloaded) / 1024
+    if p.total == 0 {
+        fmt.Println("Error: Total file size is zero.")
+        return
+    }
 
-	
-	percent := float64(p.downloaded) / float64(p.total) * 100
+    totalKiB := float64(p.total) / 1024
+    downloadedKiB := float64(p.downloaded) / 1024
 
-	// Calculate download speed in MiB/s by dividing the downloaded bytes by the elapsed time in seconds.
-	elapsed := time.Since(p.startTime).Seconds()
-	speed := float64(p.downloaded) / (1024 * 1024 * elapsed) // MiB/s
+    percent := float64(p.downloaded) / float64(p.total) * 100
 
-	// Create a progress bar (50 characters wide) based on the percentage completed.
-	barWidth := 50
-	completed := int(float64(barWidth) * (float64(p.downloaded) / float64(p.total)))
-	bar := strings.Repeat("=", completed) + strings.Repeat(" ", barWidth-completed)
+    // Calculate download speed in MiB/s by dividing the downloaded bytes by the elapsed time in seconds.
+    elapsed := time.Since(p.startTime).Seconds()
+    speed := float64(p.downloaded) / (1024 * 1024 * elapsed) // MiB/s
 
-	// Calculate the remaining time based on the current download speed and elapsed time.
-	var remainingTime string
-	if p.downloaded > 0 {
-		// Calculate bytes remaining and estimated time per byte.
-		bytesRemaining := p.total - p.downloaded
-		timePerByte := elapsed / float64(p.downloaded)
-		remainingSeconds := float64(bytesRemaining) * timePerByte
+    // Create a progress bar (50 characters wide) based on the percentage completed.
+    barWidth := 50
+    completed := int(float64(barWidth) * (float64(p.downloaded) / float64(p.total)))
+    if completed < 0 {
+        completed = 0 // Ensure the progress is non-negative
+    }
+    bar := strings.Repeat("=", completed)
 
-		// Format the remaining time in seconds.
-		if remainingSeconds < 1 {
-			remainingTime = "0s"
-		} else {
-			remainingTime = fmt.Sprintf("%.1fs", remainingSeconds)
-		}
-	} else {
-		// If no data has been downloaded yet, remain uncertain about the remaining time.
-		remainingTime = "??s"
-	}
+    // Calculate the remaining time based on the current download speed and elapsed time.
+    var remainingTime string
+    if p.downloaded > 0 {
+        bytesRemaining := p.total - p.downloaded
+        timePerByte := elapsed / float64(p.downloaded)
+        remainingSeconds := float64(bytesRemaining) * timePerByte
 
-	
-	fmt.Printf("\r %.2f KiB / %.2f KiB [%s] %.2f%% %.2f MiB/s %s",
-		downloadedKiB,
-		totalKiB,
-		bar,
-		percent,
-		speed,
-		remainingTime)
+        if remainingSeconds < 1 {
+            remainingTime = "0s"
+        } else {
+            remainingTime = fmt.Sprintf("%.1fs", remainingSeconds)
+        }
+    } else {
+        remainingTime = "??s"
+    }
 
+    fmt.Printf("\r %.2f KiB / %.2f KiB [%s] %.2f%% %.2f MiB/s %s",
+        downloadedKiB,
+        totalKiB,
+        bar,
+        percent,
+        speed,
+        remainingTime)
 
-	if p.downloaded == p.total {
-		fmt.Println()
-	}
+    if p.downloaded == p.total {
+        fmt.Println()
+    }
 }
