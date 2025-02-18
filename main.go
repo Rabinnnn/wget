@@ -30,10 +30,10 @@ func main() {
         fmt.Println("Output will be written to 'wget-log'.")
     }
     
-    // If input file is provided, read URLs and initiate downloading multiple files
-        
+    
+        // If input file is provided, read URLs and initiate downloading multiple files
         if flags.InputFile != "" {
-            urls, err := download.ReadURLsFromFile(flags.InputFile) 
+            urls, err := download.ReadURLsFromFile(flags.InputFile) // Correct call
             if err != nil {
                 fmt.Println("Error reading URLs from file:", err)
                 return
