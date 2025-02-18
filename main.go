@@ -3,7 +3,6 @@ import (
     "flag"
     "fmt"
     "os"
-    "bufio"
     "wget/config"
     "wget/download"
     "wget/mirror"
@@ -12,6 +11,7 @@ func main() {
     // Initialize flags and parse command-line arguments
     flags := config.InitFlags()
     flag.Parse()
+    
     // If background download flag is set, redirect output to a log file
     if flags.Background {
         logFile, err := os.Create("wget-log") // Create a log file
@@ -19,21 +19,31 @@ func main() {
             fmt.Println("Error creating log file:", err)
             return
         }
-        defer logFile.Close()
+        defer func() {
+            closeErr := logFile.Close()
+            if closeErr != nil {
+                fmt.Println("Error closing log file:", closeErr)
+            }
+        }()
         os.Stdout = logFile // Redirect stdout to log file
         os.Stderr = logFile // Redirect stderr to log file
         fmt.Println("Output will be written to 'wget-log'.")
     }
+    
     // If input file is provided, read URLs and initiate downloading multiple files
-    if flags.InputFile != "" {
-        urls, err := readURLsFromFile(flags.InputFile) // Read URLs from the file
-        if err != nil {
-            fmt.Println("Error reading URLs from file:", err)
+        
+        if flags.InputFile != "" {
+            urls, err := download.ReadURLsFromFile(flags.InputFile) 
+            if err != nil {
+                fmt.Println("Error reading URLs from file:", err)
+                return
+            }
+            download.DownloadMultipleFiles(urls, flags.OutputDir, flags.RateLimit)
+            if err != nil {
+                fmt.Println("Error downloading multiple files:", err)
+            }
             return
         }
-        download.DownloadMultipleFiles(urls, flags.OutputDir, flags.RateLimit) // Download multiple files
-        return
-    }
     // If mirror flag is set, mirror the website specified by the URL argument
     if flags.Mirror {
         if len(flag.Args()) == 0 {
@@ -58,19 +68,3 @@ func main() {
         fmt.Println("Error downloading file:", err)
     }
 }
-// Helper function to read URLs from a file
-func readURLsFromFile(filename string) ([]string, error) {
-    file, err := os.Open(filename) // Open the file containing URLs
-    if err != nil {
-        return nil, err
-    }
-    defer file.Close()
-    
-    var urls []string
-    scanner := bufio.NewScanner(file) // Scanner to read the file line by line
-    for scanner.Scan() {
-        urls = append(urls, scanner.Text()) // Add each URL to the slice
-    }
-    return urls, scanner.Err()
-}
-
