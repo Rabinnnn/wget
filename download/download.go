@@ -9,6 +9,7 @@ import (
 	"sync"
 	"time"
 	"wget/utils" 
+    "bufio"
 )
 
 // DownloadFile downloads a file from the provided URL, saves it to the specified output directory and file, and applies a rate limit if provided.
@@ -105,4 +106,28 @@ func DownloadMultipleFiles(urls []string, outputDir, rateLimit string) {
     // Wait for all downloads to complete.
     wg.Wait()
     fmt.Println("Download finished.") 
+}
+// Helper function to read URLs from a file
+// In download package
+func ReadURLsFromFile(filename string) ([]string, error) {
+    file, err := os.Open(filename) // Open the file containing URLs
+    if err != nil {
+        return nil, err
+    }
+    defer func() {
+        closeErr := file.Close()
+        if closeErr != nil {
+            err = closeErr // Return the error of closing the file
+        }
+    }()
+
+    var urls []string
+    scanner := bufio.NewScanner(file) // Scanner to read the file line by line
+    for scanner.Scan() {
+        urls = append(urls, scanner.Text()) // Add each URL to the slice
+    }
+    if err := scanner.Err(); err != nil {
+        return nil, err
+    }
+    return urls, nil
 }
