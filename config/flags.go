@@ -10,8 +10,10 @@ type Flags struct {
     Mirror       bool   
     Reject       string 
     Exclude      string 
-    ConvertLinks bool   
+    ConvertLinks bool
+    UseDynamic bool   
 }
+
 // InitFlags initializes and parses command-line flags.
 func InitFlags() *Flags {
     flags := &Flags{}
@@ -23,10 +25,15 @@ func InitFlags() *Flags {
     flag.BoolVar(&flags.Background, "B", false, "Download in the background")
     flag.StringVar(&flags.InputFile, "i", "", "File containing multiple URLs to download")
     flag.BoolVar(&flags.Mirror, "mirror", false, "Mirror a website")
-    flag.StringVar(&flags.Reject, "R", "", "Reject specific file types (e.g., jpg,gif)")
+    flag.StringVar(&flags.Reject, "reject", "", "Reject specific file types (e.g., jpg,gif)") 
+    flag.StringVar(&flags.Reject, "R", "", "Reject specific file types (e.g., jpg,gif)") 
     flag.StringVar(&flags.Exclude, "X", "", "Exclude specific directories (e.g., /js,/css)")
+    flag.StringVar(&flags.Exclude, "exclude", "", "Exclude specific directories (e.g., /js,/css)")
     flag.BoolVar(&flags.ConvertLinks, "convert-links", false, "Convert links for offline viewing")
+    flag.BoolVar(&flags.UseDynamic, "dynamic", true, "Enable javascript rendering")
+
+    
+
     
     return flags
 }
-
