@@ -61,14 +61,23 @@ func InitFlags() *Flags {
 	}
 
 	// If an input file is provided, read the URLs from it
-	if flags.InputFile != "" {
-		urls, err := download.ReadURLsFromFile(flags.InputFile)
-		if err != nil {
-			fmt.Printf("Error reading URLs from file: %v\n", err)
-			os.Exit(1)
-		}
-		flags.URLs = urls
+	// if flags.InputFile != "" {
+	// 	urls, err := download.ReadURLsFromFile(flags.InputFile)
+	// 	if err != nil {
+	// 		fmt.Printf("Error reading URLs from file: %v\n", err)
+	// 		os.Exit(1)
+	// 	}
+	// 	flags.URLs = urls
+	// }
+	// Get URLs from remaining arguments
+	args := fs.Args()
+	if len(args) < 1 && flags.InputFile == "" {
+		fmt.Println("no URL specified")
+		return nil
 	}
+
+	// Store URLs
+	flags.URLs = args
 
 	return flags
 }
