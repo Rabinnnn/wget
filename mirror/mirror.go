@@ -26,7 +26,7 @@ type MirrorParams struct{
 }
 
 
-func GetMirrorParams(urlStr, outputDir string, rejectTypes []string, excludePaths []string, convertLinks bool) *MirrorParams{
+func GetMirrorParams(urlStr, outputDir string, convertLinks bool, rejectTypes []string, excludePaths []string) *MirrorParams{
     baseURL, err := url.Parse(urlStr)
     if err != nil {
 		fmt.Printf("Warning: Failed to parse URL: %v\n", err)
@@ -228,4 +228,17 @@ func hasDynamicParts(parts []string) bool {
 	}
 
 	return false
+}
+
+
+func (m *MirrorParams) Mirror() error {
+	// Create output directory
+	if err := os.MkdirAll(m.OutputDir, 0755); err != nil {
+		return fmt.Errorf("failed to create output directory: %v", err)
+	}
+
+	fmt.Printf("Starting mirror of %s\n", m.URL)
+	fmt.Printf("Output directory: %s\n", m.OutputDir)
+
+	return m.ProcessUrl(m.URL)
 }
