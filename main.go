@@ -46,9 +46,9 @@ func main() {
         }
     // If mirror flag is set, mirror the website specified by the URL argument
     if flags.Mirror {
-        if len(flag.Args()) == 0 {
-            fmt.Println("Error: URL is required for mirroring") // URL is required for mirroring
-            return
+        if len(flag.Args()) != 1 {
+            fmt.Fprintf(os.Stderr, "Error: mirror mode requires exactly one URL\n")
+			os.Exit(1)
         }
         websiteURL := flag.Args()[0]
         err := mirror.MirrorWebsite(websiteURL, flags.RateLimit) // Start mirroring the website
