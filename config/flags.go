@@ -5,7 +5,7 @@ import (
 	"flag"
 	"fmt"
 	"os"
-	"wget/download"
+	//"wget/download"
 )
 
 // Flags struct holds all the configurable parameters for the download operation.
