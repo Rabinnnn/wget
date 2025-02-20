@@ -78,8 +78,8 @@ func main() {
 		}
 
 		// Create mirror options
-		mirrorOpts := mirror.NewMirrorOptions(flags.URLs[0], outputDir, flags.ConvertLinks, flags.RejectTypes, flags.ExcludePaths)
-		if mirrorOpts == nil {
+		MirrorParams := mirror.GetMirrorParams(flags.URLs[0], outputDir, flags.ConvertLinks, flags.RejectTypes, flags.ExcludePaths)
+		if MirrorParams == nil {
 			fmt.Fprintf(os.Stderr, "Error: Failed to create mirror options\n")
 			os.Exit(1)
 		}
@@ -88,7 +88,7 @@ func main() {
 		fmt.Printf("Starting mirror of %s\n", flags.URLs[0])
 		fmt.Printf("Output directory: %s\n", outputDir)
 
-		if err := mirrorOpts.Mirror(); err != nil {
+		if err := MirrorParams.Mirror(); err != nil {
 			fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 			os.Exit(1)
 		}
