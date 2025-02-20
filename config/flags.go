@@ -37,10 +37,20 @@ func InitFlags() *Flags {
 	fs.BoolVar(&flags.Background, "B", false, "Download in the background")
 	fs.StringVar(&flags.InputFile, "i", "", "File containing multiple URLs to download")
 	fs.BoolVar(&flags.Mirror, "mirror", false, "Mirror a website")
-	fs.StringVar(&flags.Reject, "reject", "", "Reject specific file types (e.g., jpg,gif)")
-	fs.StringVar(&flags.Reject, "R", "", "Reject specific file types (e.g., jpg,gif)")
-	fs.StringVar(&flags.Exclude, "X", "", "Exclude specific directories (e.g., /js,/css)")
-	fs.StringVar(&flags.Exclude, "exclude", "", "Exclude specific directories (e.g., /js,/css)")
+	// fs.StringVar(&flags.Reject, "reject", "", "Reject specific file types (e.g., jpg,gif)")
+	// fs.StringVar(&flags.Reject, "R", "", "Reject specific file types (e.g., jpg,gif)")
+	// fs.StringVar(&flags.Exclude, "X", "", "Exclude specific directories (e.g., /js,/css)")
+	// fs.StringVar(&flags.Exclude, "exclude", "", "Exclude specific directories (e.g., /js,/css)")
+	
+	// Mirror-related flags
+	var rejectListShort, rejectListLong string
+	fs.StringVar(&rejectListShort, "R", "", "Reject file types (comma-separated list)")
+	fs.StringVar(&rejectListLong, "reject", "", "Reject file types (comma-separated list)")
+
+	var excludeListShort, excludeListLong string
+	fs.StringVar(&excludeListShort, "X", "", "Exclude directories (comma-separated list)")
+	fs.StringVar(&excludeListLong, "exclude", "", "Exclude directories (comma-separated list)")
+
 	fs.BoolVar(&flags.ConvertLinks, "convert-links", false, "Convert links for offline viewing")
 	fs.BoolVar(&flags.UseDynamic, "dynamic", true, "Enable javascript rendering")
 
