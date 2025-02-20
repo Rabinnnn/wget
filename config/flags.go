@@ -18,6 +18,8 @@ type Flags struct {
 	Mirror       bool
 	Reject       string
 	Exclude      string
+	RejectTypes []string
+	ExcludePaths []string
 	ConvertLinks bool
 	UseDynamic   bool
 	URLs         []string // Added to store URLs from the input file
@@ -25,24 +27,28 @@ type Flags struct {
 
 // InitFlags initializes and parses command-line flags.
 func InitFlags() *Flags {
+	fs := flag.NewFlagSet(os.Args[0], flag.ExitOnError)
 	flags := &Flags{}
 
 	// Initialize flags with their default values and descriptions
-	flag.StringVar(&flags.OutputFile, "O", "", "Save the file with a different name")
-	flag.StringVar(&flags.OutputDir, "P", ".", "Save the file in a specific directory")
-	flag.StringVar(&flags.RateLimit, "rate-limit", "", "Limit the download speed (e.g., 200k, 2M)")
-	flag.BoolVar(&flags.Background, "B", false, "Download in the background")
-	flag.StringVar(&flags.InputFile, "i", "", "File containing multiple URLs to download")
-	flag.BoolVar(&flags.Mirror, "mirror", false, "Mirror a website")
-	flag.StringVar(&flags.Reject, "reject", "", "Reject specific file types (e.g., jpg,gif)")
-	flag.StringVar(&flags.Reject, "R", "", "Reject specific file types (e.g., jpg,gif)")
-	flag.StringVar(&flags.Exclude, "X", "", "Exclude specific directories (e.g., /js,/css)")
-	flag.StringVar(&flags.Exclude, "exclude", "", "Exclude specific directories (e.g., /js,/css)")
-	flag.BoolVar(&flags.ConvertLinks, "convert-links", false, "Convert links for offline viewing")
-	flag.BoolVar(&flags.UseDynamic, "dynamic", true, "Enable javascript rendering")
+	fs.StringVar(&flags.OutputFile, "O", "", "Save the file with a different name")
+	fs.StringVar(&flags.OutputDir, "P", ".", "Save the file in a specific directory")
+	fs.StringVar(&flags.RateLimit, "rate-limit", "", "Limit the download speed (e.g., 200k, 2M)")
+	fs.BoolVar(&flags.Background, "B", false, "Download in the background")
+	fs.StringVar(&flags.InputFile, "i", "", "File containing multiple URLs to download")
+	fs.BoolVar(&flags.Mirror, "mirror", false, "Mirror a website")
+	fs.StringVar(&flags.Reject, "reject", "", "Reject specific file types (e.g., jpg,gif)")
+	fs.StringVar(&flags.Reject, "R", "", "Reject specific file types (e.g., jpg,gif)")
+	fs.StringVar(&flags.Exclude, "X", "", "Exclude specific directories (e.g., /js,/css)")
+	fs.StringVar(&flags.Exclude, "exclude", "", "Exclude specific directories (e.g., /js,/css)")
+	fs.BoolVar(&flags.ConvertLinks, "convert-links", false, "Convert links for offline viewing")
+	fs.BoolVar(&flags.UseDynamic, "dynamic", true, "Enable javascript rendering")
 
-	// Parse the flags
-	flag.Parse()
+	// Parse flags, but skip the program name
+	if err := fs.Parse(os.Args[1:]); err != nil {
+		fmt.Println(err)
+		return nil
+	}
 
 	// If an input file is provided, read the URLs from it
 	if flags.InputFile != "" {
