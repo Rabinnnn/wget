@@ -1,12 +1,27 @@
 package main
+
 import (
-    "flag"
-    "fmt"
-    "os"
-    "wget/config"
-    "wget/download"
-    "wget/mirror"
+	"flag"
+	"fmt"
+	"os"
+	"path/filepath"
+	"strings"
+	"wget/config"
+	"wget/download"
+	"wget/mirror"
 )
+
+func expandPath(path string) (string, error) {
+	if strings.HasPrefix(path, "~/") {
+		homeDir, err := os.UserHomeDir()
+		if err != nil {
+			return "", fmt.Errorf("error getting home directory: %v", err)
+		}
+		return filepath.Join(homeDir, path[2:]), nil
+	}
+	return path, nil
+}
+
 func main() {
     // Initialize flags and parse command-line arguments
     flags := config.InitFlags()
@@ -50,12 +65,36 @@ func main() {
             fmt.Fprintf(os.Stderr, "Error: mirror mode requires exactly one URL\n")
 			os.Exit(1)
         }
-        websiteURL := flag.Args()[0]
-        err := mirror.MirrorWebsite(websiteURL, flags.RateLimit) // Start mirroring the website
-        if err != nil {
-            fmt.Println("Error mirroring website:", err)
-        }
-        return
+        
+        // Set output directory
+		outputDir := "mirrors"
+		if flags.OutputDir != "" {
+			if expanded, err := expandPath(flags.OutputDir); err != nil {
+				fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+				os.Exit(1)
+			} else {
+				outputDir = expanded
+			}
+		}
+
+		// Create mirror options
+		mirrorOpts := mirror.NewMirrorOptions(flags.URLs[0], outputDir, flags.ConvertLinks, flags.RejectTypes, flags.ExcludePaths)
+		if mirrorOpts == nil {
+			fmt.Fprintf(os.Stderr, "Error: Failed to create mirror options\n")
+			os.Exit(1)
+		}
+
+		// Start mirroring
+		fmt.Printf("Starting mirror of %s\n", flags.URLs[0])
+		fmt.Printf("Output directory: %s\n", outputDir)
+
+		if err := mirrorOpts.Mirror(); err != nil {
+			fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+			os.Exit(1)
+		}
+
+		fmt.Printf("\nMirroring complete. You can use a tool like 'live-server' to view the mirrored content.\n")
+		return
     }
     // If no flags match, download a single file from the provided URL argument
     if len(flag.Args()) == 0 {
