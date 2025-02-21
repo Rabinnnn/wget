@@ -25,7 +25,7 @@ func expandPath(path string) (string, error) {
 func main() {
     // Initialize flags and parse command-line arguments
     flags := config.InitFlags()
-    flag.Parse()
+   // flag.Parse()
     
     // If background download flag is set, redirect output to a log file
     if flags.Background {
@@ -61,7 +61,8 @@ func main() {
         }
     // If mirror flag is set, mirror the website specified by the URL argument
     if flags.Mirror {
-        if len(flag.Args()) != 1 {
+
+        if len(flags.URLs) != 1 {
             fmt.Fprintf(os.Stderr, "Error: mirror mode requires exactly one URL\n")
 			os.Exit(1)
         }
@@ -93,7 +94,6 @@ func main() {
 			os.Exit(1)
 		}
 
-		fmt.Printf("\nMirroring complete. You can use a tool like 'live-server' to view the mirrored content.\n")
 		return
     }
     // If no flags match, download a single file from the provided URL argument
