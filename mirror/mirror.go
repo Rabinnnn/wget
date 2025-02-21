@@ -79,6 +79,11 @@ func (m *MirrorParams) ProcessUrl(urlStr string) error {
 		return nil
 	}
 
+	// Exclude the js folder
+	if strings.Contains(parsedURL.Path, "/js/") {
+		return nil
+	}
+
 	// Check if path matches any exclude patterns
 	for _, excludePath := range m.ExcludePaths {
 			normalizedExclude := strings.Trim(excludePath, "/")
