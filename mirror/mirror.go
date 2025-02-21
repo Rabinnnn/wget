@@ -80,6 +80,7 @@ func (m *MirrorParams) ProcessUrl(urlStr string) error {
 	}
 
 
+
 	filename := filepath.Base(parsedURL.Path)
 	if filename == "" || filename == "/" {
 		filename = "index.html"
@@ -87,6 +88,26 @@ func (m *MirrorParams) ProcessUrl(urlStr string) error {
 
 	// Flag to track if this file should be saved
 	shouldSaveFile := true
+
+	// Skip rejected files
+	for _, rejectedType := range m.RejectTypes {
+		if strings.EqualFold(filename, rejectedType) {
+			fmt.Printf("Skipping rejected file: %s\n", urlStr)
+			shouldSaveFile = false
+		}
+	}
+
+	ext := strings.ToLower(filepath.Ext(parsedURL.Path))
+	if ext != "" {
+		ext = strings.TrimPrefix(ext, ".")
+		for _, rejectedType := range m.RejectTypes {
+			if strings.EqualFold(ext, rejectedType) {
+				fmt.Printf("Skipping rejected file type: %s\n", urlStr)
+				shouldSaveFile = false
+			}
+		}
+	}
+
 
 
 	fmt.Printf("Downloading: %s\n", urlStr)
@@ -300,6 +321,47 @@ func (m *MirrorParams) ProcessUrl(urlStr string) error {
 			// Write the updated HTML back to the file
 			if err := os.WriteFile(outputPath, buf.Bytes(), 0644); err != nil {
 				return fmt.Errorf("failed to write updated HTML: %v", err)
+			}
+		}
+	}else if strings.Contains(contentType, "text/css") {
+		// Process CSS files
+		cssContent := string(body)
+		urls := extractURLsFromCSS(cssContent)
+		for _, cssURL := range urls {
+			absURL, err := m.getAbsoluteURL(parsedURL, cssURL)
+			if err != nil {
+				fmt.Printf("Warning: Failed to resolve URL %s: %v\n", cssURL, err)
+				continue
+			}
+
+			if absURL.Host == m.baseHost {
+				localPath := m.getRelativePath(parsedURL, absURL)
+				if m.ConvertLinks {
+					// Replace the URL in the CSS file with the local path
+					cssContent = strings.ReplaceAll(cssContent, fmt.Sprintf(`url('%s')`, cssURL), fmt.Sprintf(`url('%s')`, localPath))
+					cssContent = strings.ReplaceAll(cssContent, fmt.Sprintf(`url("%s")`, cssURL), fmt.Sprintf(`url("%s")`, localPath))
+					cssContent = strings.ReplaceAll(cssContent, fmt.Sprintf(`url(%s)`, cssURL), fmt.Sprintf(`url(%s')`, localPath))
+				}
+
+				cleanAbsURL := *absURL
+				cleanAbsURL.Fragment = ""
+				cleanAbsURL.RawQuery = ""
+				if m.visited[cleanAbsURL.String()] {
+					continue
+				}
+
+				m.currentDepth++
+				if err := m.ProcessUrl(absURL.String()); err != nil {
+					fmt.Printf("Warning: Failed to process URL %s: %v\n", absURL.String(), err)
+				}
+				m.currentDepth--
+			}
+		}
+
+		// Write the updated CSS back to the file if not rejected
+		if shouldSaveFile {
+			if err := os.WriteFile(outputPath, []byte(cssContent), 0644); err != nil {
+				return fmt.Errorf("failed to write updated CSS: %v", err)
 			}
 		}
 	}

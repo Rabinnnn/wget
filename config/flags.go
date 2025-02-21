@@ -1,10 +1,10 @@
 package config
 
 import (
-	
 	"flag"
 	"fmt"
 	"os"
+	"strings"
 	//"wget/download"
 )
 
@@ -78,6 +78,20 @@ func InitFlags() *Flags {
 
 	// Store URLs
 	flags.URLs = args
+
+		// Process reject lists (combine short and long options)
+		rejectTypes := []string{}
+		if rejectListShort != "" {
+			rejectTypes = append(rejectTypes, strings.Split(rejectListShort, ",")...)
+		}
+		if rejectListLong != "" {
+			rejectTypes = append(rejectTypes, strings.Split(rejectListLong, ",")...)
+		}
+		for i := range rejectTypes {
+			rejectTypes[i] = strings.TrimSpace(rejectTypes[i])
+		}
+		flags.RejectTypes = rejectTypes
+
 
 	return flags
 }
