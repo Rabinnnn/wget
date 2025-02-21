@@ -109,8 +109,9 @@ func (m *MirrorParams) ProcessUrl(urlStr string) error {
 	}
 
 
-
-	fmt.Printf("Downloading: %s\n", urlStr)
+	if shouldSaveFile{
+		fmt.Printf("Downloading: %s\n", urlStr)
+	}
 
 	// Download the URL
 	req, err := http.NewRequest("GET", urlStr, nil)
