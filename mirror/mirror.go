@@ -244,6 +244,43 @@ func (m *MirrorParams) ProcessUrl(urlStr string) error {
 						}
 					}
 				}
+
+				// handle <style> tags
+				if n.Data == "style" && n.FirstChild != nil {
+					cssContent := n.FirstChild.Data
+					urls := extractURLsFromCSS(cssContent)
+					for _, cssURL := range urls {
+						absURL, err := m.getAbsoluteURL(parsedURL, cssURL)
+						if err != nil {
+							fmt.Printf("Warning: Failed to resolve URL %s: %v\n", cssURL, err)
+							continue
+						}
+
+						if absURL.Host == m.baseHost {
+							localPath := m.getRelativePath(parsedURL, absURL)
+							if m.ConvertLinks {
+								// Replace the URL in the style tag with the local path
+								cssContent = strings.ReplaceAll(cssContent, fmt.Sprintf(`url('%s')`, cssURL), fmt.Sprintf(`url('%s')`, localPath))
+								cssContent = strings.ReplaceAll(cssContent, fmt.Sprintf(`url("%s")`, cssURL), fmt.Sprintf(`url("%s")`, localPath))
+								cssContent = strings.ReplaceAll(cssContent, fmt.Sprintf(`url(%s)`, cssURL), fmt.Sprintf(`url(%s')`, localPath))
+								n.FirstChild.Data = cssContent
+							}
+
+							cleanAbsURL := *absURL
+							cleanAbsURL.Fragment = ""
+							cleanAbsURL.RawQuery = ""
+							if m.visited[cleanAbsURL.String()] {
+								continue
+							}
+
+							m.currentDepth++
+							if err := m.ProcessUrl(absURL.String()); err != nil {
+								fmt.Printf("Warning: Failed to process URL %s: %v\n", absURL.String(), err)
+							}
+							m.currentDepth--
+						}
+					}
+				}
 			}
 
 			// Process child nodes
