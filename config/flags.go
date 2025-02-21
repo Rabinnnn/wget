@@ -92,6 +92,19 @@ func InitFlags() *Flags {
 		}
 		flags.RejectTypes = rejectTypes
 
+		// Process exclude lists (combine short and long options)
+		excludePaths := []string{}
+		if excludeListShort != "" {
+			excludePaths = append(excludePaths, strings.Split(excludeListShort, ",")...)
+		}
+		if excludeListLong != "" {
+			excludePaths = append(excludePaths, strings.Split(excludeListLong, ",")...)
+		}
+		for i := range excludePaths {
+			excludePaths[i] = strings.TrimSpace(excludePaths[i])
+		}
+		flags.ExcludePaths = excludePaths
+
 
 	return flags
 }

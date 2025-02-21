@@ -79,7 +79,17 @@ func (m *MirrorParams) ProcessUrl(urlStr string) error {
 		return nil
 	}
 
-
+	// Check if path matches any exclude patterns
+	for _, excludePath := range m.ExcludePaths {
+			normalizedExclude := strings.Trim(excludePath, "/")
+			normalizedPath := strings.Trim(parsedURL.Path, "/")
+	
+			if strings.HasPrefix(normalizedPath, normalizedExclude) {
+				fmt.Printf("Skipping excluded path: %s\n", urlStr)
+				return nil
+			}
+	}
+	
 
 	filename := filepath.Base(parsedURL.Path)
 	if filename == "" || filename == "/" {
