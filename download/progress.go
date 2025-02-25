@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"io"
 	"strings"
+    "os"
+    "golang.org/x/term"
 	"time"
 )
 
@@ -26,6 +28,17 @@ func NewProgressWriter(writer io.Writer, total int64) *ProgressWriter {
 		startTime: time.Now(), 
 	}
 }
+
+// getTerminalWidth gets the width of the terminal.
+// Returns a fallback width of 80 if it can't determine the actual width.
+func GetTerminalWidth() int {
+	fd := int(os.Stdout.Fd())
+	if width, _, err := term.GetSize(fd); err == nil {
+		return width
+	}
+	return 50 // fallback width if we can't determine terminal width
+}
+
 
 // Write writes data to the underlying writer and tracks progress.
 // It updates the amount of data downloaded and calls the `printProgress` function to display the progress.
@@ -66,11 +79,15 @@ func (p *ProgressWriter) printProgress() {
 
     var percent float64
     var barWidth int
-
+    terminalWidth:=GetTerminalWidth()
+   
     // If the total size is unknown (Content-Length is -1), skip the percentage calculation.
     if p.total > 0 {
         percent = float64(p.downloaded) / float64(p.total) * 100
-        barWidth = 50
+        barWidth = terminalWidth / 5 // bar width is a fifth of the terminal width
+        if terminalWidth < 55 {
+            barWidth = 3
+        }
     } else {
         percent = -1 // Indicating no percentage calculation
         barWidth = 25 // Decrease width since we don't know the total size
