@@ -1,7 +1,6 @@
 package main
 
 import (
-	"flag"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -51,7 +50,7 @@ func main() {
             urls, err := download.ReadURLsFromFile(flags.InputFile) // Correct call
             if err != nil {
                 fmt.Println("Error reading URLs from file:", err)
-                return
+                os.Exit(1)
             }
             download.DownloadMultipleFiles(urls, flags.OutputDir, flags.RateLimit)
             if err != nil {
@@ -63,16 +62,16 @@ func main() {
     if flags.Mirror {
 
         if len(flags.URLs) != 1 {
-            fmt.Fprintf(os.Stderr, "Error: mirror mode requires exactly one URL\n")
-			os.Exit(1)
+            fmt.Println("Mirror mode requires exactly one URL")
+            os.Exit(1)
         }
         
         // Set output directory
 		outputDir := "mirrors"
 		if flags.OutputDir != "" {
 			if expanded, err := expandPath(flags.OutputDir); err != nil {
-				fmt.Fprintf(os.Stderr, "Error: %v\n", err)
-				os.Exit(1)
+                fmt.Printf("error: %v\n", err)
+				os.Exit(1) 
 			} else {
 				outputDir = expanded
 			}
@@ -81,7 +80,7 @@ func main() {
 		// Create mirror options
 		MirrorParams := mirror.GetMirrorParams(flags.URLs[0], outputDir, flags.ConvertLinks, flags.RejectTypes, flags.ExcludePaths)
 		if MirrorParams == nil {
-			fmt.Fprintf(os.Stderr, "Error: Failed to create mirror options\n")
+            fmt.Printf("failed to create mirror options\n")
 			os.Exit(1)
 		}
 
@@ -90,20 +89,21 @@ func main() {
 		fmt.Printf("Output directory: %s\n", outputDir)
 
 		if err := MirrorParams.Mirror(); err != nil {
-			fmt.Fprintf(os.Stderr, "Error: %v\n", err)
-			os.Exit(1)
+            fmt.Printf("mirroring failed: %v\n", err)
+			os.Exit(1) 
 		}
 
 		return
     }
     // If no flags match, download a single file from the provided URL argument
-    if len(flag.Args()) == 0 {
-        fmt.Println("Error: URL is required") // URL is required for file download
-        return
+    if len(flags.URLs) == 0 {
+        fmt.Println("URL is required for file download")
+        return 
     }
-    fileURL := flag.Args()[0]
-    err := download.DownloadFile(fileURL, flags.OutputFile, flags.OutputDir, flags.RateLimit) // Download single file
-    if err != nil {
-        fmt.Println("Error downloading file:", err)
+    fileURL := flags.URLs[0]
+   
+    if err := download.DownloadFile(fileURL, flags.OutputFile, flags.OutputDir, flags.RateLimit); err != nil {
+        fmt.Printf("download failed: %v\n", err)
+        return 
     }
 }
