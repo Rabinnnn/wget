@@ -61,7 +61,7 @@ func (p *ProgressWriter) Write(data []byte) (int, error) {
 // It displays the downloaded data, total size, progress bar, download speed, and estimated remaining time.
 func (p *ProgressWriter) printProgress() {
 	// Limit the frequency of printing progress (only print every 500ms).
-	if time.Since(p.lastPrinted) < time.Second/2 {
+	if time.Since(p.lastPrinted) < time.Second/5 && p.downloaded < p.total {
 		return
 	}
 
