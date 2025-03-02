@@ -37,12 +37,7 @@ func InitFlags() *Flags {
 	fs.BoolVar(&flags.Background, "B", false, "Download in the background")
 	fs.StringVar(&flags.InputFile, "i", "", "File containing multiple URLs to download")
 	fs.BoolVar(&flags.Mirror, "mirror", false, "Mirror a website")
-	// fs.StringVar(&flags.Reject, "reject", "", "Reject specific file types (e.g., jpg,gif)")
-	// fs.StringVar(&flags.Reject, "R", "", "Reject specific file types (e.g., jpg,gif)")
-	// fs.StringVar(&flags.Exclude, "X", "", "Exclude specific directories (e.g., /js,/css)")
-	// fs.StringVar(&flags.Exclude, "exclude", "", "Exclude specific directories (e.g., /js,/css)")
 	
-	// Mirror-related flags
 	var rejectListShort, rejectListLong string
 	fs.StringVar(&rejectListShort, "R", "", "Reject file types (comma-separated list)")
 	fs.StringVar(&rejectListLong, "reject", "", "Reject file types (comma-separated list)")
@@ -60,16 +55,7 @@ func InitFlags() *Flags {
 		return nil
 	}
 
-	// If an input file is provided, read the URLs from it
-	// if flags.InputFile != "" {
-	// 	urls, err := download.ReadURLsFromFile(flags.InputFile)
-	// 	if err != nil {
-	// 		fmt.Printf("Error reading URLs from file: %v\n", err)
-	// 		os.Exit(1)
-	// 	}
-	// 	flags.URLs = urls
-	// }
-	// Get URLs from remaining arguments
+	
 	args := fs.Args()
 	if len(args) < 1 && flags.InputFile == "" {
 		fmt.Println("no URL specified")
