@@ -99,5 +99,5 @@ We love collaboration! Pull requests are welcome, and for major changes, please 
 
 [Shayo Victor](https://learn.zone01kisumu.ke/git/svictor)
 
-[Rodney Ochieng](https://learn.zone01kisumu.ke/git/rochieng)
+[Rodney Ochieng](https://learn.zone01kisumu.ke/git/rodnochieng)
 
