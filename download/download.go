@@ -16,7 +16,8 @@ import (
 )
 
 // DownloadFile downloads a file from the provided URL, saves it to the specified output directory and file, and applies a rate limit if provided.
-func DownloadFile(fileURL, outputFile, outputDir, rateLimit string) error {
+// DownloadFile downloads a file from the provided URL, saves it to the specified output directory and file, and applies a rate limit if provided.
+func DownloadFile(fileURL, outputFile, outputDir, rateLimit string, background bool) error {
 	startTime := time.Now()
 	fmt.Printf("start at %s\n", startTime.Format("2006-01-02 15:04:05"))
 
@@ -69,11 +70,16 @@ func DownloadFile(fileURL, outputFile, outputDir, rateLimit string) error {
 		writer = NewRateLimitedWriter(file, limit)
 	}
 
-	// Set up a writer that will track download progress.
-	progressWriter := NewProgressWriter(writer, contentLength)
+	// Only use progress writer if not in background mode
+	if !background {
+		// Set up a writer that will track download progress.
+		progressWriter := NewProgressWriter(writer, contentLength)
+		_, err = io.Copy(progressWriter, resp.Body)
+	} else {
+		// In background mode, just copy the data without progress tracking
+		_, err = io.Copy(writer, resp.Body)
+	}
 
-	// Copy the file contents from the response body to the file while tracking progress.
-	_, err = io.Copy(progressWriter, resp.Body)
 	if err != nil {
 		return err
 	}
@@ -89,23 +95,22 @@ func DownloadFile(fileURL, outputFile, outputDir, rateLimit string) error {
 // Increment the wait group counter for each download.
 // Start a new goroutine for each download.
 // Ensure the counter is decremented when the download completes.
-func DownloadMultipleFiles(urls []string, outputDir, rateLimit string) {
-	var wg sync.WaitGroup
-
-	for _, u := range urls {
-		wg.Add(1)
-		go func(url string) {
-			defer wg.Done()
-			err := DownloadFile(url, "", outputDir, rateLimit)
-			if err != nil {
-				fmt.Printf("Error downloading %s: %v\n", url, err)
-			}
-		}(u)
-	}
-
-	// Wait for all downloads to complete.
-	wg.Wait()
-	fmt.Println("Download finished.")
+// DownloadMultipleFiles downloads multiple files in parallel from the provided URLs
+func DownloadMultipleFiles(urls []string, outputDir, rateLimit string, background bool) {
+    var wg sync.WaitGroup
+    for _, u := range urls {
+        wg.Add(1)
+        go func(url string) {
+            defer wg.Done()
+            err := DownloadFile(url, "", outputDir, rateLimit, background)
+            if err != nil {
+                fmt.Printf("Error downloading %s: %v\n", url, err)
+            }
+        }(u)
+    }
+    // Wait for all downloads to complete.
+    wg.Wait()
+    fmt.Println("Download finished.")
 }
 
 // Helper function to read URLs from a file
@@ -130,7 +135,7 @@ func ReadURLsFromFile(filename string) ([]string, error) {
 	for scanner.Scan() {
 		lineNumber++
 		urlText := strings.TrimSpace(scanner.Text())
-		
+
 		// Skip empty lines
 		if urlText == "" {
 			fmt.Printf("Line %d: Empty URL, skipping\n", lineNumber)
@@ -159,7 +164,7 @@ func ReadURLsFromFile(filename string) ([]string, error) {
 		for _, invalidURL := range invalidURLs {
 			fmt.Println("- " + invalidURL)
 		}
-		fmt.Printf("\nFound %d valid URLs and %d invalid URLs\n", 
+		fmt.Printf("\nFound %d valid URLs and %d invalid URLs\n",
 			len(validURLs), len(invalidURLs))
 	}
 
