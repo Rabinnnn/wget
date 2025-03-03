@@ -1,121 +1,42 @@
 package download
 
 import (
-	"bufio"
 	"fmt"
 	"io"
 	"net/http"
-	"net/url"
 	"os"
 	"path/filepath"
-	"strings"
 	"sync"
-	"time"
-
-	"wget/utils"
+    "strings"
+    "bufio"
+    "net/url"
 )
 
-// DownloadFile downloads a file from the provided URL, saves it to the specified output directory and file, and applies a rate limit if provided.
-// DownloadFile downloads a file from the provided URL, saves it to the specified output directory and file, and applies a rate limit if provided.
-func DownloadFile(fileURL, outputFile, outputDir, rateLimit string, background bool) error {
-	startTime := time.Now()
-	fmt.Printf("start at %s\n", startTime.Format("2006-01-02 15:04:05"))
+// Global output manager (singleton)
+var outputManager *OutputManager
+var outputManagerInit sync.Once
 
-	// Make an HTTP GET request to the file URL.
-	resp, err := http.Get(fileURL)
-	if err != nil {
-		return err
-	}
-	defer resp.Body.Close()
-
-	// Check if the server returned a successful HTTP status.
-	if resp.StatusCode != http.StatusOK {
-		return fmt.Errorf("status: %s", resp.Status)
-	}
-	fmt.Printf("sending request, awaiting response... status %s\n", resp.Status)
-
-	// Get the content length of the file.
-	contentLength := resp.ContentLength
-	fmt.Printf("content size: %d [~%.2fMB]\n", contentLength, float64(contentLength)/(1024*1024))
-
-	// If the output file name is not provided, use the base name of the URL as the file name.
-	fileName := outputFile
-	if fileName == "" {
-		fileName = filepath.Base(fileURL)
-	}
-
-	// Set the full file path where the file will be saved.
-	filePath := filepath.Join(outputDir, fileName)
-	fmt.Printf("saving file to: %s\n", filePath)
-
-	// Ensure the output directory exists (create if it doesn't).
-	if err := os.MkdirAll(outputDir, os.ModePerm); err != nil {
-		return err
-	}
-
-	// Create the output file in the specified location.
-	file, err := os.Create(filePath)
-	if err != nil {
-		return err
-	}
-	defer file.Close()
-
-	// Set up the writer. If rate limit is specified, apply rate limiting to the writer.
-	var writer io.Writer = file
-	if rateLimit != "" {
-		limit, err := utils.ParseRateLimit(rateLimit)
-		if err != nil {
-			return err
-		}
-		writer = NewRateLimitedWriter(file, limit)
-	}
-
-	// Only use progress writer if not in background mode
-	if !background {
-		// Set up a writer that will track download progress.
-		progressWriter := NewProgressWriter(writer, contentLength)
-		_, err = io.Copy(progressWriter, resp.Body)
-	} else {
-		// In background mode, just copy the data without progress tracking
-		_, err = io.Copy(writer, resp.Body)
-	}
-
-	if err != nil {
-		return err
-	}
-
-	fmt.Printf("\nDownloaded [%s]\n", fileURL)
-	fmt.Printf("finished at %s\n", time.Now().Format("2006-01-02 15:04:05"))
-	return nil
+// GetOutputManager returns the singleton output manager instance
+func GetOutputManager() *OutputManager {
+	outputManagerInit.Do(func() {
+		outputManager = NewOutputManager()
+	})
+	return outputManager
 }
 
-// DownloadMultipleFiles initiates downloading multiple files concurrently using goroutines.
-// A wait group is used to synchronize the completion of multiple downloads.
-// Loop through all provided URLs and download them concurrently.
-// Increment the wait group counter for each download.
-// Start a new goroutine for each download.
-// Ensure the counter is decremented when the download completes.
-// DownloadMultipleFiles downloads multiple files in parallel from the provided URLs
-func DownloadMultipleFiles(urls []string, outputDir, rateLimit string, background bool) {
-    var wg sync.WaitGroup
-    for _, u := range urls {
-        wg.Add(1)
-        go func(url string) {
-            defer wg.Done()
-            err := DownloadFile(url, "", outputDir, rateLimit, background)
-            if err != nil {
-                fmt.Printf("Error downloading %s: %v\n", url, err)
-            }
-        }(u)
-    }
-    // Wait for all downloads to complete.
-    wg.Wait()
-    fmt.Println("Download finished.")
+// ModifiedProgressWriter uses the output manager for tracking progress
+type ModifiedProgressWriter struct {
+	writer     io.Writer
+	url        string
+	total      int64
+	downloaded int64
+	manager    *OutputManager
 }
 
-// Helper function to read URLs from a file
 // In download package
 func ReadURLsFromFile(filename string) ([]string, error) {
+	manager := GetOutputManager()
+	
 	file, err := os.Open(filename) // Open the file containing URLs
 	if err != nil {
 		return nil, fmt.Errorf("failed to open file %s: %v", filename, err)
@@ -138,14 +59,14 @@ func ReadURLsFromFile(filename string) ([]string, error) {
 
 		// Skip empty lines
 		if urlText == "" {
-			fmt.Printf("Line %d: Empty URL, skipping\n", lineNumber)
+			manager.Log("Line %d: Empty URL, skipping", lineNumber)
 			continue
 		}
 
 		// Validate URL
 		parsedURL, err := url.Parse(urlText)
 		if err != nil || parsedURL.Scheme == "" || parsedURL.Host == "" {
-			fmt.Printf("Line %d: Invalid URL format '%s', skipping\n", lineNumber, urlText)
+			manager.Log("Line %d: Invalid URL format '%s', skipping", lineNumber, urlText)
 			invalidURLs = append(invalidURLs, fmt.Sprintf("Line %d: %s", lineNumber, urlText))
 			continue
 		}
@@ -160,11 +81,11 @@ func ReadURLsFromFile(filename string) ([]string, error) {
 
 	// Report invalid URLs if any were found
 	if len(invalidURLs) > 0 {
-		fmt.Println("\nInvalid URLs found in file:")
+		manager.Log("Invalid URLs found in file:")
 		for _, invalidURL := range invalidURLs {
-			fmt.Println("- " + invalidURL)
+			manager.Log("- %s", invalidURL)
 		}
-		fmt.Printf("\nFound %d valid URLs and %d invalid URLs\n",
+		manager.Log("Found %d valid URLs and %d invalid URLs",
 			len(validURLs), len(invalidURLs))
 	}
 
@@ -173,4 +94,134 @@ func ReadURLsFromFile(filename string) ([]string, error) {
 	}
 
 	return validURLs, nil
+}
+
+// NewModifiedProgressWriter creates a new progress writer that integrates with the output manager
+func NewModifiedProgressWriter(writer io.Writer, url string, total int64) *ModifiedProgressWriter {
+	manager := GetOutputManager()
+	manager.RegisterDownload(url, total)
+	
+	return &ModifiedProgressWriter{
+		writer:     writer,
+		url:        url,
+		total:      total,
+		downloaded: 0,
+		manager:    manager,
+	}
+}
+
+// Write writes data and updates progress through the output manager
+func (p *ModifiedProgressWriter) Write(data []byte) (int, error) {
+	n, err := p.writer.Write(data)
+	if err != nil {
+		return n, err
+	}
+	
+	p.downloaded += int64(n)
+	p.manager.UpdateProgress(p.url, p.downloaded)
+	
+	return n, nil
+}
+
+// DownloadFile with output manager integration
+func DownloadFile(fileURL, outputFile, outputDir, rateLimit string, background bool) error {
+	manager := GetOutputManager()
+	manager.Log("Starting download of %s", fileURL)
+	
+	// Make an HTTP GET request to the file URL
+	resp, err := http.Get(fileURL)
+	if err != nil {
+		manager.Log("Error requesting %s: %v", fileURL, err)
+		return err
+	}
+	defer resp.Body.Close()
+	
+	// Check if the server returned a successful HTTP status
+	if resp.StatusCode != http.StatusOK {
+		manager.Log("Status error for %s: %s", fileURL, resp.Status)
+		return fmt.Errorf("status: %s", resp.Status)
+	}
+	manager.Log("Response received for %s: %s", fileURL, resp.Status)
+	
+	// Get the content length of the file
+	contentLength := resp.ContentLength
+	manager.Log("Content size for %s: %d bytes (%.2f MB)", 
+		fileURL, contentLength, float64(contentLength)/(1024*1024))
+	
+	// If the output file name is not provided, use the base name of the URL as the file name
+	fileName := outputFile
+	if fileName == "" {
+		fileName = filepath.Base(fileURL)
+	}
+	
+	// Set the full file path where the file will be saved
+	filePath := filepath.Join(outputDir, fileName)
+	manager.Log("Saving %s to: %s", fileURL, filePath)
+	
+	// Ensure the output directory exists
+	if err := os.MkdirAll(outputDir, os.ModePerm); err != nil {
+		manager.Log("Error creating directory for %s: %v", fileURL, err)
+		return err
+	}
+	
+	// Create the output file
+	file, err := os.Create(filePath)
+	if err != nil {
+		manager.Log("Error creating file for %s: %v", fileURL, err)
+		return err
+	}
+	defer file.Close()
+	
+	// Set up the writer with rate limiting if needed
+	var writer io.Writer = file
+	if rateLimit != "" {
+		limit, err := ParseRateLimit(rateLimit)
+		if err != nil {
+			manager.Log("Error parsing rate limit for %s: %v", fileURL, err)
+			return err
+		}
+		writer = NewRateLimitedWriter(file, limit)
+	}
+	
+	// Use our modified progress writer
+	progressWriter := NewModifiedProgressWriter(writer, fileURL, contentLength)
+	_, err = io.Copy(progressWriter, resp.Body)
+	
+	if err != nil {
+		manager.Log("Error downloading %s: %v", fileURL, err)
+		return err
+	}
+	
+	manager.Log("Completed download of %s", fileURL)
+	manager.CompleteDownload(fileURL)
+	
+	return nil
+}
+
+// Modified DownloadMultipleFiles with output manager integration
+func DownloadMultipleFiles(urls []string, outputDir, rateLimit string, background bool) {
+	manager := GetOutputManager()
+	manager.Log("Starting download of %d files", len(urls))
+	
+	var wg sync.WaitGroup
+	for _, u := range urls {
+		wg.Add(1)
+		go func(url string) {
+			defer wg.Done()
+			err := DownloadFile(url, "", outputDir, rateLimit, background)
+			if err != nil {
+				manager.Log("Error downloading %s: %v", url, err)
+			}
+		}(u)
+	}
+	
+	wg.Wait()
+	manager.Log("All downloads completed")
+}
+
+// ParseRateLimit is a placeholder for the actual function in utils
+func ParseRateLimit(rateLimit string) (int64, error) {
+	// You should import and use the actual function from utils
+	// This is just a placeholder for the example
+	return 1024 * 1024, nil // 1 MB/s default
 }

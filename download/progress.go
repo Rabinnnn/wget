@@ -2,141 +2,215 @@ package download
 
 import (
 	"fmt"
-	"io"
 	"os"
 	"strings"
+	"sync"
 	"time"
 
 	"golang.org/x/term"
 )
 
-// ProgressWriter is a custom writer that tracks the progress of the download
-// by updating download statistics like progress percentage, speed, and remaining time.
-type ProgressWriter struct {
-	writer      io.Writer
-	total       int64
-	downloaded  int64
-	lastPrinted time.Time
-	startTime   time.Time
-	lastWidth   int // Store the last known terminal width
+// OutputManager handles all console output for multiple downloads
+type OutputManager struct {
+	mu             sync.Mutex
+	progressBars   map[string]*ProgressInfo
+	terminalHeight int
+	terminalWidth  int
+	logMessages    []string
+	maxLogLines    int
 }
 
-// NewProgressWriter creates a new ProgressWriter instance that tracks download progress.
-// It initializes the writer and the total size of the file to be downloaded.
-func NewProgressWriter(writer io.Writer, total int64) *ProgressWriter {
-	return &ProgressWriter{
-		writer:     writer,
-		total:      total,
-		startTime:  time.Now(),
-		lastWidth:  GetTerminalWidth(), // Initialize with current terminal width
-		lastPrinted: time.Now().Add(-1 * time.Second), // Ensure first update prints immediately
+// ProgressInfo stores information about a download's progress
+type ProgressInfo struct {
+	URL         string
+	Total       int64
+	Downloaded  int64
+	Speed       float64
+	StartTime   time.Time
+	LastUpdated time.Time
+}
+
+// NewOutputManager creates a new output manager
+func NewOutputManager() *OutputManager {
+	height, width := getTerminalSize()
+	return &OutputManager{
+		progressBars:   make(map[string]*ProgressInfo),
+		terminalHeight: height,
+		terminalWidth:  width,
+		maxLogLines:    10, // Maximum number of log messages to keep
 	}
 }
 
-// GetTerminalWidth gets the width of the terminal.
-// Returns a fallback width of 50 if it can't determine the actual width.
-func GetTerminalWidth() int {
-	fd := int(os.Stdout.Fd())
-	if width, _, err := term.GetSize(fd); err == nil {
-		return width
-	}
-	return 50 // fallback width if we can't determine terminal width
-}
-
-// Write writes data to the underlying writer and tracks progress.
-// It updates the amount of data downloaded and calls the `printProgress` function to display the progress.
-func (p *ProgressWriter) Write(data []byte) (int, error) {
-	n, err := p.writer.Write(data)
+// getTerminalSize gets the current terminal dimensions
+func getTerminalSize() (int, int) {
+	width, height, err := term.GetSize(int(os.Stdout.Fd()))
 	if err != nil {
-		return n, err
+		return 24, 80 // Fallback values
 	}
-
-	p.downloaded += int64(n)
-	p.printProgress()
-
-	return n, nil
+	return height, width
 }
 
-// printProgress prints the progress of the download to the console.
-// It displays the downloaded data, total size, progress bar, download speed, and estimated remaining time.
-func (p *ProgressWriter) printProgress() {
-	// Limit the frequency of printing progress (only print every 500ms).
-	if time.Since(p.lastPrinted) < time.Second/5 && p.downloaded < p.total {
-		return
+// RegisterDownload adds a new download to be tracked
+func (om *OutputManager) RegisterDownload(url string, total int64) {
+	om.mu.Lock()
+	defer om.mu.Unlock()
+
+	om.progressBars[url] = &ProgressInfo{
+		URL:       url,
+		Total:     total,
+		StartTime: time.Now(),
 	}
-
-	// Check if terminal width has changed since last update
-	currentWidth := GetTerminalWidth()
-	terminalResized := currentWidth != p.lastWidth
-	p.lastWidth = currentWidth // Update the stored width
-
-	p.lastPrinted = time.Now()
-
-	if p.total == 0 {
-		fmt.Println("Error: Total file size is zero.")
-		return
-	}
-
-	totalKiB := float64(p.total) / 1024
-	downloadedKiB := float64(p.downloaded) / 1024
-
-	var percent float64
-	var barWidth int
-	terminalWidth := currentWidth
 	
-	// Clear the line completely on resize to prevent artifacts
-	if terminalResized {
-		fmt.Print("\r\033[K")
-	}
+	// Update display immediately
+	om.updateDisplay()
+}
 
-	// If the total size is unknown (Content-Length is -1), skip the percentage calculation.
-	if p.total > 0 {
-		percent = float64(p.downloaded) / float64(p.total) * 100
-		barWidth = terminalWidth / 5 // bar width is a fifth of the terminal width
+// UpdateProgress updates the progress of a download
+func (om *OutputManager) UpdateProgress(url string, downloaded int64) {
+	om.mu.Lock()
+	defer om.mu.Unlock()
+
+	if info, exists := om.progressBars[url]; exists {
+		info.Downloaded = downloaded
 		
-		// Ensure minimum bar width
-		if barWidth < 3 {
-			barWidth = 3
+		// Calculate speed
+		elapsed := time.Since(info.StartTime).Seconds()
+		if elapsed > 0 {
+			info.Speed = float64(downloaded) / (1024 * 1024 * elapsed) // MiB/s
 		}
+		
+		info.LastUpdated = time.Now()
+		
+		// Update display if enough time has passed since last update
+		if len(om.progressBars) == 1 || time.Since(info.LastUpdated) > time.Millisecond*200 {
+			om.updateDisplay()
+		}
+	}
+}
+
+// CompleteDownload marks a download as complete and removes its progress bar
+func (om *OutputManager) CompleteDownload(url string) {
+	om.mu.Lock()
+	defer om.mu.Unlock()
+
+	delete(om.progressBars, url)
+	om.updateDisplay()
+}
+
+// Log adds a log message to be displayed
+func (om *OutputManager) Log(format string, args ...interface{}) {
+	om.mu.Lock()
+	defer om.mu.Unlock()
+
+	message := fmt.Sprintf(format, args...)
+	om.logMessages = append(om.logMessages, fmt.Sprintf("[%s] %s", time.Now().Format("15:04:05"), message))
+	
+	// Keep only the last N log messages
+	if len(om.logMessages) > om.maxLogLines {
+		om.logMessages = om.logMessages[len(om.logMessages)-om.maxLogLines:]
+	}
+	
+	om.updateDisplay()
+}
+
+// updateDisplay redraws the entire console output
+func (om *OutputManager) updateDisplay() {
+	// Get current terminal size
+	om.terminalHeight, om.terminalWidth = getTerminalSize()
+	
+	// Clear screen and move cursor to top-left
+	fmt.Print("\033[2J\033[H")
+	
+	// Calculate available space
+	logArea := len(om.logMessages)
+	if logArea > om.maxLogLines {
+		logArea = om.maxLogLines
+	}
+	
+	progressArea := len(om.progressBars)
+	if progressArea == 0 {
+		progressArea = 1 // Always leave at least one line for progress
+	}
+	
+	// Make sure we have enough room
+	totalNeeded := logArea + progressArea + 1 // +1 for the divider
+	if totalNeeded > om.terminalHeight {
+		// If not enough room, reduce log area
+		logArea = om.terminalHeight - progressArea - 1
+		if logArea < 0 {
+			logArea = 0
+		}
+	}
+	
+	// Print log messages
+	startIdx := 0
+	if len(om.logMessages) > logArea {
+		startIdx = len(om.logMessages) - logArea
+	}
+	
+	for i := startIdx; i < len(om.logMessages); i++ {
+		fmt.Println(om.logMessages[i])
+	}
+	
+	// Print divider if we have both logs and progress bars
+	if logArea > 0 && len(om.progressBars) > 0 {
+		fmt.Println(strings.Repeat("-", om.terminalWidth))
+	}
+	
+	// Print progress bars
+	for url, info := range om.progressBars {
+		om.printProgressBar(url, info)
+	}
+}
+
+// printProgressBar prints a single progress bar
+func (om *OutputManager) printProgressBar(url string, info *ProgressInfo) {
+	// Calculate values
+	downloadedKiB := float64(info.Downloaded) / 1024
+	totalKiB := float64(info.Total) / 1024
+	
+	// Create short URL for display
+	displayURL := url
+	if len(url) > 30 {
+		displayURL = "..." + url[len(url)-27:]
+	}
+	
+	// Calculate progress percentage and bar
+	var percent float64
+	barWidth := om.terminalWidth / 4
+	if barWidth < 10 {
+		barWidth = 10
+	}
+	
+	if info.Total > 0 {
+		percent = float64(info.Downloaded) / float64(info.Total) * 100
 	} else {
-		percent = -1 // Indicating no percentage calculation
-		barWidth = 25 // Default width since we don't know the total size
-		
-		// Adjust for very small terminals
-		if barWidth > terminalWidth/3 {
-			barWidth = terminalWidth / 3
+		percent = -1
+	}
+	
+	// Create progress bar
+	completed := 0
+	if info.Total > 0 {
+		completed = int(float64(barWidth) * (float64(info.Downloaded) / float64(info.Total)))
+		if completed > barWidth {
+			completed = barWidth
 		}
-	}
-
-	// Calculate download speed in MiB/s by dividing the downloaded bytes by the elapsed time in seconds.
-	elapsed := time.Since(p.startTime).Seconds()
-	speed := float64(p.downloaded) / (1024 * 1024 * elapsed) // MiB/s
-
-	// Create a progress bar based on the percentage completed.
-	completed := int(float64(barWidth) * (float64(p.downloaded) / float64(p.total)))
-	if completed < 0 {
-		completed = 0 // Ensure the progress is non-negative
-	}
-	if completed > barWidth {
-		completed = barWidth // Ensure progress doesn't exceed bar width
 	}
 	
 	bar := strings.Repeat("=", completed)
-	
-	// If bar is not complete, add a > character to show progress direction
 	if completed < barWidth && completed > 0 {
 		bar = bar[:len(bar)-1] + ">" + strings.Repeat(" ", barWidth-completed)
 	} else {
 		bar = bar + strings.Repeat(" ", barWidth-completed)
 	}
-
-	// Calculate the remaining time based on the current download speed and elapsed time.
+	
+	// Calculate remaining time
 	var remainingTime string
-	if p.downloaded > 0 && p.total > 0 {
-		bytesRemaining := p.total - p.downloaded
-		timePerByte := elapsed / float64(p.downloaded)
+	if info.Downloaded > 0 && info.Total > 0 {
+		bytesRemaining := info.Total - info.Downloaded
+		timePerByte := time.Since(info.StartTime).Seconds() / float64(info.Downloaded)
 		remainingSeconds := float64(bytesRemaining) * timePerByte
-
+		
 		if remainingSeconds < 1 {
 			remainingTime = "0s"
 		} else if remainingSeconds < 60 {
@@ -149,38 +223,23 @@ func (p *ProgressWriter) printProgress() {
 	} else {
 		remainingTime = "??s"
 	}
-
-	// If the total size is unknown, display a message instead of showing percentage
+	
+	// Print progress information
 	if percent == -1 {
-		fmt.Printf("\r\033[K %.2f KiB [%s] Downloading... %.2f MiB/s %s",
+		fmt.Printf("%s: %.2f KiB [%s] %.2f MiB/s %s\n",
+			displayURL,
 			downloadedKiB,
 			bar,
-			speed,
+			info.Speed,
 			remainingTime)
 	} else {
-		if terminalWidth < 55 {
-			// For narrow terminals, use two lines
-			// First clear the current line and print the first line of information
-			fmt.Printf("\r\033[K %.2f KiB / %.2f KiB\n", downloadedKiB, totalKiB)
-			// Then clear the next line and print the second line of information
-			fmt.Printf("\r\033[K [%s] %.2f%% %.2f MiB/s %s", 
-				bar, percent, speed, remainingTime)
-			// Move cursor back up to be ready for the next update
-			if p.downloaded != p.total {
-				fmt.Print("\033[1A")
-			}
-		} else {
-			// For wider terminals, everything on one line
-			fmt.Printf("\r\033[K %.2f KiB / %.2f KiB [%s] %.2f%% %.2f MiB/s %s",
-				downloadedKiB, totalKiB, bar, percent, speed, remainingTime)
-		}
-	}
-
-	// Print a newline when download is complete
-	if p.downloaded == p.total && p.total > 0 {
-		if terminalWidth < 55 {
-			fmt.Println() // Extra newline for the two-line display
-		}
-		fmt.Println()
+		fmt.Printf("%s: %.2f/%.2f KiB [%s] %.1f%% %.2f MiB/s %s\n",
+			displayURL,
+			downloadedKiB,
+			totalKiB,
+			bar,
+			percent,
+			info.Speed,
+			remainingTime)
 	}
 }
