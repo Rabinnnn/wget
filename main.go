@@ -39,9 +39,10 @@ func main() {
                 fmt.Println("Error closing log file:", closeErr)
             }
         }()
+        fmt.Println("Output will be written to 'wget-log'.")
+
         os.Stdout = logFile // Redirect stdout to log file
         os.Stderr = logFile // Redirect stderr to log file
-        fmt.Println("Output will be written to 'wget-log'.")
     }
     
     
