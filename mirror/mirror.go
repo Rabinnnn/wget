@@ -17,56 +17,54 @@ import (
 )
 
 // A structure holding the parameters used during the mirroring process
-type MirrorParams struct{
-    URL          string
-	OutputDir    string
-	ConvertLinks bool
-	UseDynamic   bool
-	RejectTypes  []string
-	ExcludePaths []string
-	//visited      map[string]bool
-	visited      sync.Map // Concurrent-safe map
-	currentDepth int
-	maxDepth     int
+type MirrorParams struct {
+	URL           string
+	OutputDir     string
+	ConvertLinks  bool
+	UseDynamic    bool
+	RejectTypes   []string
+	ExcludePaths  []string
+	visited       sync.Map // Concurrent-safe map
+	currentDepth  int
+	maxDepth      int
 	depthMutex    sync.Mutex // Protects currentDepth
-	baseHost     string
+	baseHost      string
 	MaxConcurrent int
 }
 
-
-func GetMirrorParams(urlStr, outputDir string, convertLinks bool, rejectTypes []string, excludePaths []string) *MirrorParams{
-    baseURL, err := url.Parse(urlStr)
-    if err != nil {
+// GetMirrorParams parses the parameters passed for mirroring.
+// It then populates the MirrorParams struct using the values.
+func GetMirrorParams(urlStr, outputDir string, convertLinks bool, rejectTypes []string, excludePaths []string) *MirrorParams {
+	baseURL, err := url.Parse(urlStr)
+	if err != nil {
 		fmt.Printf("Warning: Failed to parse URL: %v\n", err)
 		return nil
 	}
 
-    return &MirrorParams{
-		URL:          urlStr,
-		OutputDir:    outputDir,
-		ConvertLinks: convertLinks,
-		RejectTypes:  rejectTypes,
-		ExcludePaths: excludePaths,
-		//visited:      make(map[string]bool),
-		maxDepth:     5, // Maximum depth for nested links
-		baseHost:     baseURL.Host,
+	return &MirrorParams{
+		URL:           urlStr,
+		OutputDir:     outputDir,
+		ConvertLinks:  convertLinks,
+		RejectTypes:   rejectTypes,
+		ExcludePaths:  excludePaths,
+		maxDepth:      5, // Maximum depth for nested links
+		baseHost:      baseURL.Host,
 		MaxConcurrent: 100000,
 	}
 }
 
-
-
-
+// ProcessUrl handles the URL passed for mirroring.
+// It downloads the resources based on the specified parameters such as output name, directory, reject, and exclude.
+// It handles the nested links recurssively.
 func (m *MirrorParams) ProcessUrl(urlStr string, wg *sync.WaitGroup, sem chan struct{}) {
-	defer wg.Done()
-	sem <- struct{}{} // Acquire semaphore
-	defer func() { <-sem }() // Ensure semaphore is released
+	defer wg.Done()          // mark when all goroutines have finished execution
+	sem <- struct{}{}        // Acquire semaphore
+	defer func() { <-sem }() // Ensure semaphore is released when the function completes.
 
 	parsedURL, err := url.Parse(urlStr)
 	if err != nil {
-			fmt.Printf("failed to parse URL %s: %v\n", urlStr, err)
-		//	<-sem // Release semaphore
-			return
+		fmt.Printf("failed to parse URL %s: %v\n", urlStr, err)
+		return
 	}
 
 	cleanURL := *parsedURL
@@ -80,16 +78,6 @@ func (m *MirrorParams) ProcessUrl(urlStr string, wg *sync.WaitGroup, sem chan st
 	}
 	m.visited.Store(urlKey, true)
 
-	// if m.visited[urlKey] {
-	// 		<-sem // Release semaphore
-	// 		return
-	// }
-	// m.visited[urlKey] = true
-
-	// if m.currentDepth > m.maxDepth {
-	// 		<-sem // Release semaphore
-	// 		return
-	// }
 	// Protect `currentDepth` with a mutex
 	m.depthMutex.Lock()
 	if m.currentDepth > m.maxDepth {
@@ -106,61 +94,57 @@ func (m *MirrorParams) ProcessUrl(urlStr string, wg *sync.WaitGroup, sem chan st
 	}()
 
 	if parsedURL.Host != "" && parsedURL.Host != m.baseHost {
-			fmt.Printf("Skipping external domain: %s\n", urlStr)
-			//<-sem // Release semaphore
-			return
+		fmt.Printf("Skipping external domain: %s\n", urlStr)
+		return
 	}
 
 	if strings.Contains(parsedURL.Path, "/js/") {
-		//	<-sem // Release semaphore
-			return
+		return
 	}
 
 	for _, excludePath := range m.ExcludePaths {
-			normalizedExclude := strings.Trim(excludePath, "/")
-			normalizedPath := strings.Trim(parsedURL.Path, "/")
+		normalizedExclude := strings.Trim(excludePath, "/")
+		normalizedPath := strings.Trim(parsedURL.Path, "/")
 
-			if strings.HasPrefix(normalizedPath, normalizedExclude) {
-					fmt.Printf("Skipping excluded path: %s\n", urlStr)
-					//<-sem // Release semaphore
-					return
-			}
+		if strings.HasPrefix(normalizedPath, normalizedExclude) {
+			fmt.Printf("Skipping excluded path: %s\n", urlStr)
+			return
+		}
 	}
 
 	filename := filepath.Base(parsedURL.Path)
 	if filename == "" || filename == "/" {
-			filename = "index.html"
+		filename = "index.html"
 	}
 
 	shouldSaveFile := true
 
 	for _, rejectedType := range m.RejectTypes {
-			if strings.EqualFold(filename, rejectedType) {
-					fmt.Printf("Skipping rejected file: %s\n", urlStr)
-					shouldSaveFile = false
-			}
+		if strings.EqualFold(filename, rejectedType) {
+			fmt.Printf("Skipping rejected file: %s\n", urlStr)
+			shouldSaveFile = false
+		}
 	}
 
 	ext := strings.ToLower(filepath.Ext(parsedURL.Path))
 	if ext != "" {
-			ext = strings.TrimPrefix(ext, ".")
-			for _, rejectedType := range m.RejectTypes {
-					if strings.EqualFold(ext, rejectedType) {
-							fmt.Printf("Skipping rejected file type: %s\n", urlStr)
-							shouldSaveFile = false
-					}
+		ext = strings.TrimPrefix(ext, ".")
+		for _, rejectedType := range m.RejectTypes {
+			if strings.EqualFold(ext, rejectedType) {
+				fmt.Printf("Skipping rejected file type: %s\n", urlStr)
+				shouldSaveFile = false
 			}
+		}
 	}
 
 	if shouldSaveFile {
-			fmt.Printf("Downloading: %s\n", urlStr)
+		fmt.Printf("Downloading: %s\n", urlStr)
 	}
 
 	req, err := http.NewRequest("GET", urlStr, nil)
 	if err != nil {
-			fmt.Printf("failed to create request: %v\n", err)
-			//<-sem // Release semaphore
-			return
+		fmt.Printf("failed to create request: %v\n", err)
+		return
 	}
 
 	req.Header.Set("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36")
@@ -169,251 +153,218 @@ func (m *MirrorParams) ProcessUrl(urlStr string, wg *sync.WaitGroup, sem chan st
 
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
-			fmt.Printf("failed to download %s: %v\n", urlStr, err)
-		//	<-sem // Release semaphore
-			return
+		fmt.Printf("failed to download %s: %v\n", urlStr, err)
+		return
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-			fmt.Printf("failed to download %s: status code %d\n", urlStr, resp.StatusCode)
-			//<-sem // Release semaphore
-			return
+		fmt.Printf("failed to download %s: status code %d\n", urlStr, resp.StatusCode)
+		return
 	}
 
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
-			fmt.Printf("failed to read response body: %v\n", err)
-			//<-sem // Release semaphore
-			return
+		fmt.Printf("failed to read response body: %v\n", err)
+		return
 	}
 
 	outputPath := filepath.Join(m.OutputDir, m.convertToLocalPath(parsedURL))
 
 	if strings.HasSuffix(outputPath, "/") || outputPath == m.OutputDir {
-			outputPath = filepath.Join(outputPath, "index.html")
+		outputPath = filepath.Join(outputPath, "index.html")
 	}
 
 	if info, err := os.Stat(outputPath); err == nil && info.IsDir() {
-			outputPath = filepath.Join(outputPath, "index.html")
+		outputPath = filepath.Join(outputPath, "index.html")
 	}
 
 	if shouldSaveFile {
-			dir := filepath.Dir(outputPath)
-			if err := os.MkdirAll(dir, 0755); err != nil {
-					fmt.Printf("failed to create directory %s: %v\n", dir, err)
-					//<-sem // Release semaphore
-					return
-			}
+		dir := filepath.Dir(outputPath)
+		if err := os.MkdirAll(dir, 0755); err != nil {
+			fmt.Printf("failed to create directory %s: %v\n", dir, err)
+			return
+		}
 
-			if err := os.WriteFile(outputPath, body, 0644); err != nil {
-					fmt.Printf("failed to write file: %v\n", err)
-					//<-sem // Release semaphore
-					return
-			}
+		if err := os.WriteFile(outputPath, body, 0644); err != nil {
+			fmt.Printf("failed to write file: %v\n", err)
+			return
+		}
 	}
 
 	contentType := resp.Header.Get("Content-Type")
 	if strings.Contains(contentType, "text/html") {
-			doc, err := html.Parse(bytes.NewReader(body))
-			if err != nil {
-					fmt.Printf("failed to parse HTML: %v\n", err)
-					//<-sem
-					return
-			}
+		doc, err := html.Parse(bytes.NewReader(body))
+		if err != nil {
+			fmt.Printf("failed to parse HTML: %v\n", err)
+			return
+		}
 
-			var processNode func(*html.Node)
-			processNode = func(n *html.Node) {
-					if n.Type == html.ElementNode {
-							for i := 0; i < len(n.Attr); i++ {
-									attr := n.Attr[i]
-									switch attr.Key {
-									case "href", "src":
-											absURL, err := m.getAbsoluteURL(parsedURL, attr.Val)
-											if err != nil {
-													fmt.Printf("Warning: Failed to resolve URL %s: %v\n", attr.Val, err)
-													continue
-											}
-											if strings.Contains(absURL.String(), "google-analytics.com") || strings.Contains(absURL.String(), "analytics.js") {
-													continue
-											}
-
-											if absURL.Host == m.baseHost {
-													if m.ConvertLinks {
-															localPath := m.getRelativePath(parsedURL, absURL)
-															n.Attr[i].Val = localPath
-													} else {
-															n.Attr[i].Val = absURL.String()
-													}
-
-													cleanAbsURL := *absURL
-													cleanAbsURL.Fragment = ""
-													cleanAbsURL.RawQuery = ""
-													// if m.visited[cleanAbsURL.String()] {
-													// 		continue
-													// }
-													// m.currentDepth++
-													// wg.Add(1)
-													// go m.ProcessUrl(absURL.String(), wg, sem)
-													// m.currentDepth--
-													if _, exists := m.visited.Load(cleanAbsURL.String()); exists {
-														continue
-													}
-						
-													wg.Add(1)
-													go m.ProcessUrl(absURL.String(), wg, sem)
-											}
-									case "style":
-											urls := extractURLsFromCSS(attr.Val)
-											for _, cssURL := range urls {
-													absURL, err := m.getAbsoluteURL(parsedURL, cssURL)
-													if err != nil {
-															fmt.Printf("Warning: Failed to resolve URL %s: %v\n", cssURL, err)
-															continue
-													}
-													if absURL.Host == m.baseHost {
-															localPath := m.getRelativePath(parsedURL, absURL)
-															if m.ConvertLinks {
-																	attr.Val = strings.ReplaceAll(attr.Val, fmt.Sprintf(`url('%s')`, cssURL), fmt.Sprintf(`url('%s')`, localPath))
-																	attr.Val = strings.ReplaceAll(attr.Val, fmt.Sprintf(`url("%s")`, cssURL), fmt.Sprintf(`url("%s")`, localPath))
-																	attr.Val = strings.ReplaceAll(attr.Val, fmt.Sprintf(`url(%s)`, cssURL), fmt.Sprintf(`url(%s')`, localPath))
-																	n.Attr[i] = attr
-															}
-															cleanAbsURL := *absURL
-															cleanAbsURL.Fragment = ""
-															cleanAbsURL.RawQuery = ""
-															if _, exists := m.visited.Load(cleanAbsURL.String()); exists {
-																continue
-															}
-								
-															wg.Add(1)
-															go m.ProcessUrl(absURL.String(), wg, sem)
-															// if m.visited[cleanAbsURL.String()] {
-															// 	continue
-															// }
-															// m.currentDepth++
-															// wg.Add(1)
-															// go m.ProcessUrl(absURL.String(), wg, sem)
-															// m.currentDepth--
-													}
-											}
-									case "integrity":
-											if i < len(n.Attr)-1 {
-													n.Attr = append(n.Attr[:i], n.Attr[i+1:]...)
-													i--
-											} else {
-													n.Attr = n.Attr[:i]
-											}
-									}
-							}
-
-							if n.Data == "style" && n.FirstChild != nil {
-									cssContent := n.FirstChild.Data
-									urls := extractURLsFromCSS(cssContent)
-									for _, cssURL := range urls {
-											absURL, err := m.getAbsoluteURL(parsedURL, cssURL)
-											if err != nil {
-													fmt.Printf("Warning: Failed to resolve URL %s: %v\n", cssURL, err)
-													continue
-											}
-
-											if absURL.Host == m.baseHost {
-													localPath := m.getRelativePath(parsedURL, absURL)
-													if m.ConvertLinks {
-															cssContent = strings.ReplaceAll(cssContent, fmt.Sprintf(`url('%s')`, cssURL), fmt.Sprintf(`url('%s')`, localPath))
-															cssContent = strings.ReplaceAll(cssContent, fmt.Sprintf(`url("%s")`, cssURL), fmt.Sprintf(`url("%s")`, localPath))
-															cssContent = strings.ReplaceAll(cssContent, fmt.Sprintf(`url(%s)`, cssURL), fmt.Sprintf(`url(%s')`, localPath))
-															n.FirstChild.Data = cssContent
-													}
-
-													cleanAbsURL := *absURL
-													cleanAbsURL.Fragment = ""
-													cleanAbsURL.RawQuery = ""
-													// if m.visited[cleanAbsURL.String()] {
-													// 		continue
-													// }
-													// m.currentDepth++
-													// wg.Add(1)
-													// go m.ProcessUrl(absURL.String(), wg, sem)
-													// m.currentDepth--
-													if _, exists := m.visited.Load(cleanAbsURL.String()); exists {
-														continue
-													}
-						
-													wg.Add(1)
-													go m.ProcessUrl(absURL.String(), wg, sem)
-											}
-									}
-							}
-					}
-
-					for c := n.FirstChild; c != nil; c = c.NextSibling {
-							processNode(c)
-					}
-			}
-			processNode(doc)
-
-			if shouldSaveFile {
-					var buf bytes.Buffer
-					if err := html.Render(&buf, doc); err != nil {
-							fmt.Printf("failed to render HTML: %v\n", err)
-							<-sem
-							return
-					}
-
-					if err := os.WriteFile(outputPath, buf.Bytes(), 0644); err != nil {
-							fmt.Printf("failed to write updated HTML: %v\n", err)
-							<-sem
-							return
-					}
-			}
-	} else if strings.Contains(contentType, "text/css") {
-			cssContent := string(body)
-			urls := extractURLsFromCSS(cssContent)
-			for _, cssURL := range urls {
-					absURL, err := m.getAbsoluteURL(parsedURL, cssURL)
-					if err != nil {
-							fmt.Printf("Warning: Failed to resolve URL %s: %v\n", cssURL, err)
+		var processNode func(*html.Node)
+		processNode = func(n *html.Node) {
+			if n.Type == html.ElementNode {
+				for i := 0; i < len(n.Attr); i++ {
+					attr := n.Attr[i]
+					switch attr.Key {
+					case "href", "src":
+						absURL, err := m.getAbsoluteURL(parsedURL, attr.Val)
+						if err != nil {
+							fmt.Printf("Warning: Failed to resolve URL %s: %v\n", attr.Val, err)
 							continue
-					}
+						}
+						if strings.Contains(absURL.String(), "google-analytics.com") || strings.Contains(absURL.String(), "analytics.js") {
+							continue
+						}
 
-					if absURL.Host == m.baseHost {
-							localPath := m.getRelativePath(parsedURL, absURL)
+						if absURL.Host == m.baseHost {
 							if m.ConvertLinks {
-									cssContent = strings.ReplaceAll(cssContent, fmt.Sprintf(`url('%s')`, cssURL), fmt.Sprintf(`url('%s')`, localPath))
-									cssContent = strings.ReplaceAll(cssContent, fmt.Sprintf(`url("%s")`, cssURL), fmt.Sprintf(`url("%s")`, localPath))
-									cssContent = strings.ReplaceAll(cssContent, fmt.Sprintf(`url(%s)`, cssURL), fmt.Sprintf(`url(%s')`, localPath))
+								localPath := m.getRelativePath(parsedURL, absURL)
+								n.Attr[i].Val = localPath
+							} else {
+								n.Attr[i].Val = absURL.String()
 							}
 
 							cleanAbsURL := *absURL
 							cleanAbsURL.Fragment = ""
 							cleanAbsURL.RawQuery = ""
-							// if m.visited[cleanAbsURL.String()] {
-							// 		continue
-							// }
 
-							// m.currentDepth++
-							// wg.Add(1)
-							// go m.ProcessUrl(absURL.String(), wg, sem)
-							// m.currentDepth--
 							if _, exists := m.visited.Load(cleanAbsURL.String()); exists {
 								continue
 							}
 
 							wg.Add(1)
 							go m.ProcessUrl(absURL.String(), wg, sem)
+						}
+					case "style":
+						urls := extractURLsFromCSS(attr.Val)
+						for _, cssURL := range urls {
+							absURL, err := m.getAbsoluteURL(parsedURL, cssURL)
+							if err != nil {
+								fmt.Printf("Warning: Failed to resolve URL %s: %v\n", cssURL, err)
+								continue
+							}
+							if absURL.Host == m.baseHost {
+								localPath := m.getRelativePath(parsedURL, absURL)
+								if m.ConvertLinks {
+									attr.Val = strings.ReplaceAll(attr.Val, fmt.Sprintf(`url('%s')`, cssURL), fmt.Sprintf(`url('%s')`, localPath))
+									attr.Val = strings.ReplaceAll(attr.Val, fmt.Sprintf(`url("%s")`, cssURL), fmt.Sprintf(`url("%s")`, localPath))
+									attr.Val = strings.ReplaceAll(attr.Val, fmt.Sprintf(`url(%s)`, cssURL), fmt.Sprintf(`url(%s')`, localPath))
+									n.Attr[i] = attr
+								}
+								cleanAbsURL := *absURL
+								cleanAbsURL.Fragment = ""
+								cleanAbsURL.RawQuery = ""
+								if _, exists := m.visited.Load(cleanAbsURL.String()); exists {
+									continue
+								}
+
+								wg.Add(1)
+								go m.ProcessUrl(absURL.String(), wg, sem)
+
+							}
+						}
+					case "integrity":
+						if i < len(n.Attr)-1 {
+							n.Attr = append(n.Attr[:i], n.Attr[i+1:]...)
+							i--
+						} else {
+							n.Attr = n.Attr[:i]
+						}
 					}
+				}
+
+				if n.Data == "style" && n.FirstChild != nil {
+					cssContent := n.FirstChild.Data
+					urls := extractURLsFromCSS(cssContent)
+					for _, cssURL := range urls {
+						absURL, err := m.getAbsoluteURL(parsedURL, cssURL)
+						if err != nil {
+							fmt.Printf("Warning: Failed to resolve URL %s: %v\n", cssURL, err)
+							continue
+						}
+
+						if absURL.Host == m.baseHost {
+							localPath := m.getRelativePath(parsedURL, absURL)
+							if m.ConvertLinks {
+								cssContent = strings.ReplaceAll(cssContent, fmt.Sprintf(`url('%s')`, cssURL), fmt.Sprintf(`url('%s')`, localPath))
+								cssContent = strings.ReplaceAll(cssContent, fmt.Sprintf(`url("%s")`, cssURL), fmt.Sprintf(`url("%s")`, localPath))
+								cssContent = strings.ReplaceAll(cssContent, fmt.Sprintf(`url(%s)`, cssURL), fmt.Sprintf(`url(%s')`, localPath))
+								n.FirstChild.Data = cssContent
+							}
+
+							cleanAbsURL := *absURL
+							cleanAbsURL.Fragment = ""
+							cleanAbsURL.RawQuery = ""
+
+							if _, exists := m.visited.Load(cleanAbsURL.String()); exists {
+								continue
+							}
+
+							wg.Add(1)
+							go m.ProcessUrl(absURL.String(), wg, sem)
+						}
+					}
+				}
 			}
 
-			if shouldSaveFile {
-					if err := os.WriteFile(outputPath, []byte(cssContent), 0644); err != nil {
-							fmt.Printf("failed to write updated CSS: %v\n", err)
-							//<-sem
-							return
-					}
+			for c := n.FirstChild; c != nil; c = c.NextSibling {
+				processNode(c)
 			}
+		}
+		processNode(doc)
+
+		if shouldSaveFile {
+			var buf bytes.Buffer
+			if err := html.Render(&buf, doc); err != nil {
+				fmt.Printf("failed to render HTML: %v\n", err)
+				<-sem
+				return
+			}
+
+			if err := os.WriteFile(outputPath, buf.Bytes(), 0644); err != nil {
+				fmt.Printf("failed to write updated HTML: %v\n", err)
+				<-sem
+				return
+			}
+		}
+	} else if strings.Contains(contentType, "text/css") {
+		cssContent := string(body)
+		urls := extractURLsFromCSS(cssContent)
+		for _, cssURL := range urls {
+			absURL, err := m.getAbsoluteURL(parsedURL, cssURL)
+			if err != nil {
+				fmt.Printf("Warning: Failed to resolve URL %s: %v\n", cssURL, err)
+				continue
+			}
+
+			if absURL.Host == m.baseHost {
+				localPath := m.getRelativePath(parsedURL, absURL)
+				if m.ConvertLinks {
+					cssContent = strings.ReplaceAll(cssContent, fmt.Sprintf(`url('%s')`, cssURL), fmt.Sprintf(`url('%s')`, localPath))
+					cssContent = strings.ReplaceAll(cssContent, fmt.Sprintf(`url("%s")`, cssURL), fmt.Sprintf(`url("%s")`, localPath))
+					cssContent = strings.ReplaceAll(cssContent, fmt.Sprintf(`url(%s)`, cssURL), fmt.Sprintf(`url(%s')`, localPath))
+				}
+
+				cleanAbsURL := *absURL
+				cleanAbsURL.Fragment = ""
+				cleanAbsURL.RawQuery = ""
+
+				if _, exists := m.visited.Load(cleanAbsURL.String()); exists {
+					continue
+				}
+
+				wg.Add(1)
+				go m.ProcessUrl(absURL.String(), wg, sem)
+			}
+		}
+
+		if shouldSaveFile {
+			if err := os.WriteFile(outputPath, []byte(cssContent), 0644); err != nil {
+				fmt.Printf("failed to write updated CSS: %v\n", err)
+				return
+			}
+		}
 	}
-//	<-sem // Release semaphore
 }
 
 func (m *MirrorParams) ProcessUrlWrapper(urlStr string) error {
@@ -426,11 +377,6 @@ func (m *MirrorParams) ProcessUrlWrapper(urlStr string) error {
 	wg.Wait()
 	return nil
 }
-
-
-
-
-
 
 // convertToLocalPath transforms a URL to local file path
 func (m *MirrorParams) convertToLocalPath(u *url.URL) string {
@@ -465,7 +411,6 @@ func (m *MirrorParams) convertToLocalPath(u *url.URL) string {
 
 	return path
 }
-
 
 // hasFileExtension checks if a path has a file extension
 func hasFileExtension(path string) bool {
@@ -516,7 +461,6 @@ func hasDynamicParts(parts []string) bool {
 	return false
 }
 
-
 func (m *MirrorParams) Mirror() error {
 	// Create output directory
 	if err := os.MkdirAll(m.OutputDir, 0755); err != nil {
@@ -529,8 +473,6 @@ func (m *MirrorParams) Mirror() error {
 	return m.ProcessUrlWrapper(m.URL)
 }
 
-
-
 // getAbsoluteURL transforms relative URL to Absolute URL
 func (m *MirrorParams) getAbsoluteURL(base *url.URL, ref string) (*url.URL, error) {
 	refURL, err := url.Parse(ref)
@@ -539,8 +481,6 @@ func (m *MirrorParams) getAbsoluteURL(base *url.URL, ref string) (*url.URL, erro
 	}
 	return base.ResolveReference(refURL), nil
 }
-
-
 
 // getRelativePath converts a URL to a relative link path for use in HTML
 func (m *MirrorParams) getRelativePath(base, ref *url.URL) string {
@@ -569,8 +509,6 @@ func (m *MirrorParams) getRelativePath(base, ref *url.URL) string {
 	// Convert Windows backslashes to forward slashes for URLs
 	return strings.ReplaceAll(rel, "\\", "/")
 }
-
-
 
 func extractURLsFromCSS(css string) []string {
 	var urls []string
