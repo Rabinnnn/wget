@@ -50,7 +50,7 @@ func GetMirrorParams(urlStr, outputDir string, convertLinks bool, rejectTypes []
 		//visited:      make(map[string]bool),
 		maxDepth:     5, // Maximum depth for nested links
 		baseHost:     baseURL.Host,
-		MaxConcurrent: 1000,
+		MaxConcurrent: 100000,
 	}
 }
 
