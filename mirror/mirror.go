@@ -24,9 +24,11 @@ type MirrorParams struct{
 	UseDynamic   bool
 	RejectTypes  []string
 	ExcludePaths []string
-	visited      map[string]bool
+	//visited      map[string]bool
+	visited      sync.Map // Concurrent-safe map
 	currentDepth int
 	maxDepth     int
+	depthMutex    sync.Mutex // Protects currentDepth
 	baseHost     string
 	MaxConcurrent int
 }
@@ -45,10 +47,10 @@ func GetMirrorParams(urlStr, outputDir string, convertLinks bool, rejectTypes []
 		ConvertLinks: convertLinks,
 		RejectTypes:  rejectTypes,
 		ExcludePaths: excludePaths,
-		visited:      make(map[string]bool),
+		//visited:      make(map[string]bool),
 		maxDepth:     5, // Maximum depth for nested links
 		baseHost:     baseURL.Host,
-		MaxConcurrent: 50000,
+		MaxConcurrent: 1000,
 	}
 }
 
@@ -58,11 +60,12 @@ func GetMirrorParams(urlStr, outputDir string, convertLinks bool, rejectTypes []
 func (m *MirrorParams) ProcessUrl(urlStr string, wg *sync.WaitGroup, sem chan struct{}) {
 	defer wg.Done()
 	sem <- struct{}{} // Acquire semaphore
+	defer func() { <-sem }() // Ensure semaphore is released
 
 	parsedURL, err := url.Parse(urlStr)
 	if err != nil {
 			fmt.Printf("failed to parse URL %s: %v\n", urlStr, err)
-			<-sem // Release semaphore
+		//	<-sem // Release semaphore
 			return
 	}
 
@@ -71,25 +74,45 @@ func (m *MirrorParams) ProcessUrl(urlStr string, wg *sync.WaitGroup, sem chan st
 	cleanURL.RawQuery = ""
 	urlKey := cleanURL.String()
 
-	if m.visited[urlKey] {
-			<-sem // Release semaphore
-			return
+	// Use sync.Map for thread safety
+	if _, exists := m.visited.Load(urlKey); exists {
+		return
 	}
-	m.visited[urlKey] = true
+	m.visited.Store(urlKey, true)
 
+	// if m.visited[urlKey] {
+	// 		<-sem // Release semaphore
+	// 		return
+	// }
+	// m.visited[urlKey] = true
+
+	// if m.currentDepth > m.maxDepth {
+	// 		<-sem // Release semaphore
+	// 		return
+	// }
+	// Protect `currentDepth` with a mutex
+	m.depthMutex.Lock()
 	if m.currentDepth > m.maxDepth {
-			<-sem // Release semaphore
-			return
+		m.depthMutex.Unlock()
+		return
 	}
+	m.currentDepth++
+	m.depthMutex.Unlock()
+
+	defer func() {
+		m.depthMutex.Lock()
+		m.currentDepth--
+		m.depthMutex.Unlock()
+	}()
 
 	if parsedURL.Host != "" && parsedURL.Host != m.baseHost {
 			fmt.Printf("Skipping external domain: %s\n", urlStr)
-			<-sem // Release semaphore
+			//<-sem // Release semaphore
 			return
 	}
 
 	if strings.Contains(parsedURL.Path, "/js/") {
-			<-sem // Release semaphore
+		//	<-sem // Release semaphore
 			return
 	}
 
@@ -99,7 +122,7 @@ func (m *MirrorParams) ProcessUrl(urlStr string, wg *sync.WaitGroup, sem chan st
 
 			if strings.HasPrefix(normalizedPath, normalizedExclude) {
 					fmt.Printf("Skipping excluded path: %s\n", urlStr)
-					<-sem // Release semaphore
+					//<-sem // Release semaphore
 					return
 			}
 	}
@@ -136,7 +159,7 @@ func (m *MirrorParams) ProcessUrl(urlStr string, wg *sync.WaitGroup, sem chan st
 	req, err := http.NewRequest("GET", urlStr, nil)
 	if err != nil {
 			fmt.Printf("failed to create request: %v\n", err)
-			<-sem // Release semaphore
+			//<-sem // Release semaphore
 			return
 	}
 
@@ -147,21 +170,21 @@ func (m *MirrorParams) ProcessUrl(urlStr string, wg *sync.WaitGroup, sem chan st
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
 			fmt.Printf("failed to download %s: %v\n", urlStr, err)
-			<-sem // Release semaphore
+		//	<-sem // Release semaphore
 			return
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
 			fmt.Printf("failed to download %s: status code %d\n", urlStr, resp.StatusCode)
-			<-sem // Release semaphore
+			//<-sem // Release semaphore
 			return
 	}
 
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
 			fmt.Printf("failed to read response body: %v\n", err)
-			<-sem // Release semaphore
+			//<-sem // Release semaphore
 			return
 	}
 
@@ -179,13 +202,13 @@ func (m *MirrorParams) ProcessUrl(urlStr string, wg *sync.WaitGroup, sem chan st
 			dir := filepath.Dir(outputPath)
 			if err := os.MkdirAll(dir, 0755); err != nil {
 					fmt.Printf("failed to create directory %s: %v\n", dir, err)
-					<-sem // Release semaphore
+					//<-sem // Release semaphore
 					return
 			}
 
 			if err := os.WriteFile(outputPath, body, 0644); err != nil {
 					fmt.Printf("failed to write file: %v\n", err)
-					<-sem // Release semaphore
+					//<-sem // Release semaphore
 					return
 			}
 	}
@@ -195,7 +218,7 @@ func (m *MirrorParams) ProcessUrl(urlStr string, wg *sync.WaitGroup, sem chan st
 			doc, err := html.Parse(bytes.NewReader(body))
 			if err != nil {
 					fmt.Printf("failed to parse HTML: %v\n", err)
-					<-sem
+					//<-sem
 					return
 			}
 
@@ -226,13 +249,19 @@ func (m *MirrorParams) ProcessUrl(urlStr string, wg *sync.WaitGroup, sem chan st
 													cleanAbsURL := *absURL
 													cleanAbsURL.Fragment = ""
 													cleanAbsURL.RawQuery = ""
-													if m.visited[cleanAbsURL.String()] {
-															continue
+													// if m.visited[cleanAbsURL.String()] {
+													// 		continue
+													// }
+													// m.currentDepth++
+													// wg.Add(1)
+													// go m.ProcessUrl(absURL.String(), wg, sem)
+													// m.currentDepth--
+													if _, exists := m.visited.Load(cleanAbsURL.String()); exists {
+														continue
 													}
-													m.currentDepth++
+						
 													wg.Add(1)
 													go m.ProcessUrl(absURL.String(), wg, sem)
-													m.currentDepth--
 											}
 									case "style":
 											urls := extractURLsFromCSS(attr.Val)
@@ -253,13 +282,19 @@ func (m *MirrorParams) ProcessUrl(urlStr string, wg *sync.WaitGroup, sem chan st
 															cleanAbsURL := *absURL
 															cleanAbsURL.Fragment = ""
 															cleanAbsURL.RawQuery = ""
-															if m.visited[cleanAbsURL.String()] {
+															if _, exists := m.visited.Load(cleanAbsURL.String()); exists {
 																continue
 															}
-															m.currentDepth++
+								
 															wg.Add(1)
 															go m.ProcessUrl(absURL.String(), wg, sem)
-															m.currentDepth--
+															// if m.visited[cleanAbsURL.String()] {
+															// 	continue
+															// }
+															// m.currentDepth++
+															// wg.Add(1)
+															// go m.ProcessUrl(absURL.String(), wg, sem)
+															// m.currentDepth--
 													}
 											}
 									case "integrity":
@@ -294,13 +329,19 @@ func (m *MirrorParams) ProcessUrl(urlStr string, wg *sync.WaitGroup, sem chan st
 													cleanAbsURL := *absURL
 													cleanAbsURL.Fragment = ""
 													cleanAbsURL.RawQuery = ""
-													if m.visited[cleanAbsURL.String()] {
-															continue
+													// if m.visited[cleanAbsURL.String()] {
+													// 		continue
+													// }
+													// m.currentDepth++
+													// wg.Add(1)
+													// go m.ProcessUrl(absURL.String(), wg, sem)
+													// m.currentDepth--
+													if _, exists := m.visited.Load(cleanAbsURL.String()); exists {
+														continue
 													}
-													m.currentDepth++
+						
 													wg.Add(1)
 													go m.ProcessUrl(absURL.String(), wg, sem)
-													m.currentDepth--
 											}
 									}
 							}
@@ -347,26 +388,32 @@ func (m *MirrorParams) ProcessUrl(urlStr string, wg *sync.WaitGroup, sem chan st
 							cleanAbsURL := *absURL
 							cleanAbsURL.Fragment = ""
 							cleanAbsURL.RawQuery = ""
-							if m.visited[cleanAbsURL.String()] {
-									continue
+							// if m.visited[cleanAbsURL.String()] {
+							// 		continue
+							// }
+
+							// m.currentDepth++
+							// wg.Add(1)
+							// go m.ProcessUrl(absURL.String(), wg, sem)
+							// m.currentDepth--
+							if _, exists := m.visited.Load(cleanAbsURL.String()); exists {
+								continue
 							}
 
-							m.currentDepth++
 							wg.Add(1)
 							go m.ProcessUrl(absURL.String(), wg, sem)
-							m.currentDepth--
 					}
 			}
 
 			if shouldSaveFile {
 					if err := os.WriteFile(outputPath, []byte(cssContent), 0644); err != nil {
 							fmt.Printf("failed to write updated CSS: %v\n", err)
-							<-sem
+							//<-sem
 							return
 					}
 			}
 	}
-	<-sem // Release semaphore
+//	<-sem // Release semaphore
 }
 
 func (m *MirrorParams) ProcessUrlWrapper(urlStr string) error {

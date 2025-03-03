@@ -91,7 +91,8 @@ func main() {
 
 		if err := MirrorParams.Mirror(); err != nil {
             fmt.Printf("mirroring failed: %v\n", err)
-			os.Exit(1) 
+            return
+			//os.Exit(1) 
 		}
 
 		return
