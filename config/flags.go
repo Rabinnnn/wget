@@ -37,6 +37,7 @@ func InitFlags() *Flags {
 	fs.BoolVar(&flags.Background, "B", false, "Download in the background")
 	fs.StringVar(&flags.InputFile, "i", "", "File containing multiple URLs to download")
 	fs.BoolVar(&flags.Mirror, "mirror", false, "Mirror a website")
+	flag.BoolVar(&flags.Background, "background", false, "Run download in background mode without showing progress")
 	
 	var rejectListShort, rejectListLong string
 	fs.StringVar(&rejectListShort, "R", "", "Reject file types (comma-separated list)")
