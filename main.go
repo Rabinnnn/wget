@@ -52,7 +52,7 @@ func main() {
                 fmt.Println("Error reading URLs from file:", err)
                 os.Exit(1)
             }
-            download.DownloadMultipleFiles(urls, flags.OutputDir, flags.RateLimit)
+            download.DownloadMultipleFiles(urls, flags.OutputDir, flags.RateLimit, flags.Background)
             if err != nil {
                 fmt.Println("Error downloading multiple files:", err)
             }
@@ -102,7 +102,7 @@ func main() {
     }
     fileURL := flags.URLs[0]
    
-    if err := download.DownloadFile(fileURL, flags.OutputFile, flags.OutputDir, flags.RateLimit); err != nil {
+    if err := download.DownloadFile(fileURL, flags.OutputFile, flags.OutputDir, flags.RateLimit , flags.Background); err != nil {
         fmt.Printf("download failed: %v\n", err)
         return 
     }
