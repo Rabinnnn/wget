@@ -233,8 +233,8 @@ func (om *OutputManager) printProgressBar(url string, info *ProgressInfo) {
 			info.Speed,
 			remainingTime)
 	} else {
-		fmt.Printf("%s: %.2f/%.2f KiB [%s] %.1f%% %.2f MiB/s %s\n",
-			displayURL,
+		fmt.Printf(" %.2f/%.2f KiB [%s] %.1f%% %.2f MiB/s %s\n",
+			//displayURL,
 			downloadedKiB,
 			totalKiB,
 			bar,
